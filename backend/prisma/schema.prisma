@@ -1,0 +1,114 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String          @id @default(uuid())
+  email         String          @unique
+  phoneNumber   String          @unique
+  passwordHash  String
+  role          String          @default("STUDENT") // STUDENT, ADMIN, SUPER_ADMIN
+  isActive      Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  studentProfile StudentProfile?
+  auditLogs      AuditLog[]     @relation("AdminAudit")
+}
+
+model StudentProfile {
+  id                  String            @id @default(uuid())
+  userId              String            @unique
+  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Basic Sign-up Registration Data
+  firstName           String
+  lastName            String
+  admissionNumber     String            @unique // College admission/roll no
+  address             String
+  bloodGroup          String
+  timePeriodOfStudy   String            // e.g. "2024-2028"
+
+  // Detailed Extra Profile Fields (Bilingual Malayalam support)
+  firstNameMalayalam  String?
+  lastNameMalayalam   String?
+  permanentAddress    String?
+  courseAdmitted      String?           // e.g. "BCA", "B.Com", "B.Sc CS"
+  quota               String?           // "Merit", "Management", "Sports", etc.
+  gender              String?           // "Male", "Female", "Other"
+  dob                 String?           // YYYY-MM-DD
+  nationality         String?           @default("Indian")
+  religion            String?           // "Christian", "Hindu", "Muslim", etc.
+  caste               String?
+  annualIncome        Float?
+  isEws               Boolean           @default(false) // Auto-computed: income < 100000
+
+  // Parent / Guardian Details
+  parentName          String?
+  parentOccupation    String?
+  guardianName        String?
+  guardianOccupation  String?
+
+  // Bank Details
+  bankAccountName     String?
+  bankName            String?
+  bankBranch          String?
+  bankAccountNumber   String?
+  bankIfscCode        String?
+
+  // Previous Academic Details (10th / 12th)
+  prevInstitutionName String?
+  prevCourse          String?           // "Commerce", "CS", "BioMath", "Humanities", etc.
+  prevRegisterNumber  String?
+  prevBoardUniversity String?
+  prevPeriodOfStudy   String?
+  prevPercentage      Float?
+
+  // Government IDs
+  apaarId             String?
+
+  // Status & Field Flagging
+  verificationStatus  String            @default("DRAFT") // DRAFT, SUBMITTED, CORRECTION_REQUIRED, VERIFIED
+  verifiedAt          DateTime?
+  verifiedByAdminId   String?
+
+  // Granular Field Flags JSON string: { [fieldName]: { status: "FLAGGED_ERROR", reason: "..." } }
+  fieldFlags          String            @default("{}")
+
+  documents           StudentDocument[]
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+}
+
+model StudentDocument {
+  id               String         @id @default(uuid())
+  studentProfileId String
+  studentProfile   StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  type             String         // PROFILE_PHOTO, PLUS_TWO_CERTIFICATE, SSLC_CERTIFICATE, ALLOTMENT_MEMO, CASTE_CERTIFICATE, INCOME_CERTIFICATE, COMMUNITY_CERTIFICATE, BANK_PASSBOOK, APAAR_DOCUMENT
+  fileName         String
+  filePath         String
+  fileUrl          String
+  fileMimeType     String
+  fileSize         Int
+  status           String         @default("VALID") // VALID, FLAGGED_ERROR
+  flagReason       String?
+  uploadedAt       DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([studentProfileId, type])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  adminId     String
+  admin       User     @relation("AdminAudit", fields: [adminId], references: [id])
+  targetId    String   // Student Profile ID
+  action      String   // "FLAGGED_FIELD", "VERIFIED_STUDENT", "BULK_EXPORT_EXCEL", "BULK_DOWNLOAD_ZIP"
+  details     String?  // JSON string
+  timestamp   DateTime @default(now())
+}

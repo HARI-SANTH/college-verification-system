@@ -1,0 +1,427 @@
+import { Router, Request, Response } from 'express';
+import { prisma } from '../prisma';
+import { authenticateToken, requireRole } from '../middleware/auth';
+import { Role, VerificationStatus, FieldFlagDetail } from '../types';
+import { mailService } from '../services/mail.service';
+import ExcelJS from 'exceljs';
+import archiver from 'archiver';
+import path from 'path';
+import fs from 'fs';
+
+const router = Router();
+
+// Office Staff and Super Admin access
+router.use(authenticateToken, requireRole(Role.ADMIN, Role.SUPER_ADMIN));
+
+// Helper to build Prisma filters
+const buildStudentFilter = (query: any) => {
+  const where: any = {};
+
+  if (query.course) {
+    where.courseAdmitted = { equals: String(query.course).trim() };
+  }
+  if (query.timePeriodOfStudy) {
+    where.timePeriodOfStudy = { equals: String(query.timePeriodOfStudy).trim() };
+  }
+  if (query.religion) {
+    where.religion = { equals: String(query.religion).trim() };
+  }
+  if (query.gender) {
+    where.gender = { equals: String(query.gender).trim() };
+  }
+  if (query.quota) {
+    where.quota = { equals: String(query.quota).trim() };
+  }
+  if (query.isEws !== undefined && query.isEws !== '') {
+    where.isEws = query.isEws === 'true';
+  }
+  if (query.verificationStatus) {
+    where.verificationStatus = { equals: String(query.verificationStatus).trim() };
+  }
+
+  if (query.search) {
+    const s = String(query.search).trim();
+    where.OR = [
+      { firstName: { contains: s } },
+      { lastName: { contains: s } },
+      { admissionNumber: { contains: s } },
+      { user: { email: { contains: s } } },
+      { user: { phoneNumber: { contains: s } } },
+    ];
+  }
+
+  return where;
+};
+
+// 1. List students with multi-parameter filtering
+router.get('/students', async (req: Request, res: Response) => {
+  try {
+    const where = buildStudentFilter(req.query);
+
+    const students = await prisma.studentProfile.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            phoneNumber: true,
+            isActive: true,
+          },
+        },
+        documents: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const parsedStudents = students.map((s) => {
+      let flags = {};
+      try {
+        flags = JSON.parse(s.fieldFlags || '{}');
+      } catch {}
+      return {
+        ...s,
+        fieldFlags: flags,
+      };
+    });
+
+    return res.json(parsedStudents);
+  } catch (err) {
+    console.error('[Admin List Students Error]', err);
+    return res.status(500).json({ error: 'Failed to fetch students list' });
+  }
+});
+
+// 2. Get single student details
+router.get('/students/:id', async (req: Request, res: Response) => {
+  try {
+    const student = await prisma.studentProfile.findUnique({
+      where: { id: req.params.id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            phoneNumber: true,
+            isActive: true,
+          },
+        },
+        documents: true,
+      },
+    });
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    let flags = {};
+    try {
+      flags = JSON.parse(student.fieldFlags || '{}');
+    } catch {}
+
+    return res.json({
+      ...student,
+      fieldFlags: flags,
+    });
+  } catch (err) {
+    console.error('[Admin Get Student Error]', err);
+    return res.status(500).json({ error: 'Failed to retrieve student details' });
+  }
+});
+
+// 3. Flag specific fields / documents with error reasons and send email notification
+router.post('/students/:id/flag', async (req: Request, res: Response) => {
+  try {
+    const { flags } = req.body; // Array<{ key: string, reason: string }>
+    if (!Array.isArray(flags) || flags.length === 0) {
+      return res.status(400).json({ error: 'At least one field flag with reason is required' });
+    }
+
+    const student = await prisma.studentProfile.findUnique({
+      where: { id: req.params.id },
+      include: {
+        user: true,
+        documents: true,
+      },
+    });
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    let currentFlags: Record<string, FieldFlagDetail> = {};
+    try {
+      currentFlags = JSON.parse(student.fieldFlags || '{}');
+    } catch {}
+
+    const flaggedListForEmail: Array<{ fieldOrDoc: string; reason: string }> = [];
+
+    for (const flag of flags) {
+      currentFlags[flag.key] = {
+        status: 'FLAGGED_ERROR',
+        reason: flag.reason,
+        flaggedAt: new Date().toISOString(),
+      };
+      flaggedListForEmail.push({
+        fieldOrDoc: flag.key,
+        reason: flag.reason,
+      });
+
+      // Also mark in documents table if key matches a document
+      const matchingDoc = student.documents.find((d) => d.type === flag.key);
+      if (matchingDoc) {
+        await prisma.studentDocument.update({
+          where: { id: matchingDoc.id },
+          data: {
+            status: 'FLAGGED_ERROR',
+            flagReason: flag.reason,
+          },
+        });
+      }
+    }
+
+    // Update status to CORRECTION_REQUIRED
+    const updated = await prisma.studentProfile.update({
+      where: { id: student.id },
+      data: {
+        verificationStatus: VerificationStatus.CORRECTION_REQUIRED,
+        fieldFlags: JSON.stringify(currentFlags),
+      },
+      include: {
+        documents: true,
+      },
+    });
+
+    // Record audit log
+    await prisma.auditLog.create({
+      data: {
+        adminId: req.user!.userId,
+        targetId: student.id,
+        action: 'FLAGGED_FIELDS',
+        details: JSON.stringify({ flaggedItems: flaggedListForEmail }),
+      },
+    });
+
+    // Send email notification to student via College SMTP Mailer
+    await mailService.sendFlagNotification({
+      studentEmail: student.user.email,
+      studentName: `${student.firstName} ${student.lastName}`,
+      admissionNumber: student.admissionNumber,
+      flaggedItems: flaggedListForEmail,
+    });
+
+    return res.json({
+      message: 'Mistakes flagged and notification email dispatched to student',
+      student: {
+        ...updated,
+        fieldFlags: currentFlags,
+      },
+    });
+  } catch (err) {
+    console.error('[Admin Flag Error]', err);
+    return res.status(500).json({ error: 'Failed to flag mistakes' });
+  }
+});
+
+// 4. Mark student as VERIFIED
+router.post('/students/:id/verify', async (req: Request, res: Response) => {
+  try {
+    const student = await prisma.studentProfile.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    const updated = await prisma.studentProfile.update({
+      where: { id: student.id },
+      data: {
+        verificationStatus: VerificationStatus.VERIFIED,
+        verifiedAt: new Date(),
+        verifiedByAdminId: req.user!.userId,
+        fieldFlags: '{}', // clear any old flags
+      },
+      include: {
+        documents: true,
+      },
+    });
+
+    // Mark all documents as VALID
+    await prisma.studentDocument.updateMany({
+      where: { studentProfileId: student.id },
+      data: { status: 'VALID', flagReason: null },
+    });
+
+    // Record audit log
+    await prisma.auditLog.create({
+      data: {
+        adminId: req.user!.userId,
+        targetId: student.id,
+        action: 'VERIFIED_STUDENT',
+        details: JSON.stringify({ verifiedAt: new Date().toISOString() }),
+      },
+    });
+
+    return res.json({
+      message: 'Student successfully verified and approved',
+      student: updated,
+    });
+  } catch (err) {
+    console.error('[Admin Verify Error]', err);
+    return res.status(500).json({ error: 'Failed to verify student' });
+  }
+});
+
+// 5. Export to Excel
+router.get('/export/excel', async (req: Request, res: Response) => {
+  try {
+    const where = buildStudentFilter(req.query);
+
+    const students = await prisma.studentProfile.findMany({
+      where,
+      include: {
+        user: true,
+      },
+      orderBy: { admissionNumber: 'asc' },
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Students');
+
+    worksheet.columns = [
+      { header: 'Admission No', key: 'admissionNumber', width: 16 },
+      { header: 'First Name', key: 'firstName', width: 16 },
+      { header: 'Last Name', key: 'lastName', width: 16 },
+      { header: 'First Name (Malayalam)', key: 'firstNameMalayalam', width: 20 },
+      { header: 'Last Name (Malayalam)', key: 'lastNameMalayalam', width: 20 },
+      { header: 'Course', key: 'courseAdmitted', width: 14 },
+      { header: 'Batch / Period', key: 'timePeriodOfStudy', width: 16 },
+      { header: 'Gender', key: 'gender', width: 10 },
+      { header: 'Religion', key: 'religion', width: 14 },
+      { header: 'Caste', key: 'caste', width: 14 },
+      { header: 'Quota', key: 'quota', width: 14 },
+      { header: 'Annual Income (₹)', key: 'annualIncome', width: 18 },
+      { header: 'EWS Category', key: 'isEws', width: 14 },
+      { header: 'Blood Group', key: 'bloodGroup', width: 12 },
+      { header: 'Email', key: 'email', width: 26 },
+      { header: 'Phone Number', key: 'phoneNumber', width: 16 },
+      { header: 'APAAR ID', key: 'apaarId', width: 20 },
+      { header: 'Bank Name', key: 'bankName', width: 18 },
+      { header: 'Bank Account No', key: 'bankAccountNumber', width: 20 },
+      { header: 'IFSC Code', key: 'bankIfscCode', width: 14 },
+      { header: '12th Percentage', key: 'prevPercentage', width: 16 },
+      { header: 'Verification Status', key: 'verificationStatus', width: 18 },
+    ];
+
+    // Style Header Row
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1E3A8A' }, // College Blue
+    };
+
+    students.forEach((s) => {
+      worksheet.addRow({
+        admissionNumber: s.admissionNumber,
+        firstName: s.firstName,
+        lastName: s.lastName,
+        firstNameMalayalam: s.firstNameMalayalam || '',
+        lastNameMalayalam: s.lastNameMalayalam || '',
+        courseAdmitted: s.courseAdmitted || 'N/A',
+        timePeriodOfStudy: s.timePeriodOfStudy,
+        gender: s.gender || 'N/A',
+        religion: s.religion || 'N/A',
+        caste: s.caste || 'N/A',
+        quota: s.quota || 'N/A',
+        annualIncome: s.annualIncome ?? '',
+        isEws: s.isEws ? 'YES' : 'NO',
+        bloodGroup: s.bloodGroup,
+        email: s.user.email,
+        phoneNumber: s.user.phoneNumber,
+        apaarId: s.apaarId || '',
+        bankName: s.bankName || '',
+        bankAccountNumber: s.bankAccountNumber || '',
+        bankIfscCode: s.bankIfscCode || '',
+        prevPercentage: s.prevPercentage ? `${s.prevPercentage}%` : '',
+        verificationStatus: s.verificationStatus,
+      });
+    });
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=Students_Export_${Date.now()}.xlsx`
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    console.error('[Export Excel Error]', err);
+    return res.status(500).json({ error: 'Failed to export Excel spreadsheet' });
+  }
+});
+
+// 6. Bulk Document Download (ZIP)
+router.get('/export/documents-zip', async (req: Request, res: Response) => {
+  try {
+    const where = buildStudentFilter(req.query);
+    const docTypeFilter = req.query.documentType as string; // Optional: specific document type like APAAR_DOCUMENT
+
+    const docWhere: any = {};
+    if (docTypeFilter) {
+      docWhere.type = docTypeFilter;
+    }
+
+    const students = await prisma.studentProfile.findMany({
+      where,
+      include: {
+        documents: {
+          where: docWhere,
+        },
+      },
+    });
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=College_Documents_${Date.now()}.zip`
+    );
+
+    archive.pipe(res);
+
+    let fileCount = 0;
+
+    for (const student of students) {
+      const studentFolder = `${student.admissionNumber}_${student.firstName}_${student.lastName}`;
+
+      for (const doc of student.documents) {
+        if (fs.existsSync(doc.filePath)) {
+          const ext = path.extname(doc.filePath);
+          const zipEntryName = `${studentFolder}/${doc.type}${ext}`;
+          archive.file(doc.filePath, { name: zipEntryName });
+          fileCount++;
+        }
+      }
+    }
+
+    if (fileCount === 0) {
+      archive.append('No uploaded documents found for the selected filter criteria.', {
+        name: 'README.txt',
+      });
+    }
+
+    await archive.finalize();
+  } catch (err) {
+    console.error('[Bulk ZIP Error]', err);
+    return res.status(500).json({ error: 'Failed to generate documents ZIP' });
+  }
+});
+
+export default router;

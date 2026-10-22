@@ -1,0 +1,36 @@
+export enum Role {
+  STUDENT = 'STUDENT',
+  ADMIN = 'ADMIN',
+  SUPER_ADMIN = 'SUPER_ADMIN',
+}
+
+export enum VerificationStatus {
+  DRAFT = 'DRAFT',
+  SUBMITTED = 'SUBMITTED',
+  CORRECTION_REQUIRED = 'CORRECTION_REQUIRED',
+  VERIFIED = 'VERIFIED',
+}
+
+export enum DocumentType {
+  PROFILE_PHOTO = 'PROFILE_PHOTO',
+  PLUS_TWO_CERTIFICATE = 'PLUS_TWO_CERTIFICATE',
+  SSLC_CERTIFICATE = 'SSLC_CERTIFICATE',
+  ALLOTMENT_MEMO = 'ALLOTMENT_MEMO',
+  CASTE_CERTIFICATE = 'CASTE_CERTIFICATE',
+  INCOME_CERTIFICATE = 'INCOME_CERTIFICATE',
+  COMMUNITY_CERTIFICATE = 'COMMUNITY_CERTIFICATE',
+  BANK_PASSBOOK = 'BANK_PASSBOOK',
+  APAAR_DOCUMENT = 'APAAR_DOCUMENT',
+}
+
+export interface FieldFlagDetail {
+  status: 'FLAGGED_ERROR' | 'VALID';
+  reason?: string;
+  flaggedAt?: string;
+}
+
+export interface AuthUser {
+  userId: string;
+  email: string;
+  role: Role;
+}
