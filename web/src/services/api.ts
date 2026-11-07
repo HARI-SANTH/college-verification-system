@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = (import.meta as any).env?.VITE_API_URL || 'https://college-verification-system.onrender.com/api';
 
 export const getAuthToken = (): string | null => {
   return localStorage.getItem('token');

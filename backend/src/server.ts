@@ -27,7 +27,21 @@ app.use(express.urlencoded({ extended: true }));
 const uploadsDirectory = getUploadsRoot();
 app.use('/uploads', express.static(uploadsDirectory));
 
-// Health check endpoint
+// Root & Health check endpoints
+app.get(['/', '/api'], (req: Request, res: Response) => {
+  res.json({
+    status: 'online',
+    service: 'College Student Verification Backend API',
+    endpoints: {
+      health: '/api/health',
+      auth: '/api/auth',
+      student: '/api/student',
+      admin: '/api/admin',
+    },
+    cloud: 'Supabase PostgreSQL + Supabase Cloud Storage',
+  });
+});
+
 app.get('/api/health', (req: Request, res: Response) => {
   res.json({
     status: 'ok',

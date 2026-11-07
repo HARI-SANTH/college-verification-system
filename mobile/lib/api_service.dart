@@ -6,10 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
 
 class ApiService {
-  // Default server URL.
-  // Over USB debugging with `adb reverse tcp:5000 tcp:5000`, 127.0.0.1 connects to PC localhost directly!
-  // For wireless Wi-Fi without USB, switch to your PC's Wi-Fi IP (e.g. http://10.98.161.225:5000/api).
-  static String defaultHost = 'http://127.0.0.1:5000/api';
+  // Default server URL pointing to live cloud backend on Render
+  static String defaultHost = 'https://college-verification-system.onrender.com/api';
 
   static Future<String> getBaseUrl() async {
     final prefs = await SharedPreferences.getInstance();
@@ -18,7 +16,7 @@ class ApiService {
       return custom;
     }
 
-    if (kIsWeb) return 'http://localhost:5000/api';
+    if (kIsWeb) return 'https://college-verification-system.onrender.com/api';
     try {
       if (Platform.isAndroid) {
         // Physical phone or emulator
