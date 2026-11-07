@@ -9,12 +9,15 @@ interface FlagNotificationParams {
 
 export class MailService {
   private transporter: nodemailer.Transporter | null = null;
+  private fromAddress: string;
 
   constructor() {
     const host = process.env.SMTP_HOST || 'smtp.gmail.com';
     const port = parseInt(process.env.SMTP_PORT || '587');
     const user = process.env.SMTP_USER || 'harisanths56@gmail.com';
     const pass = process.env.SMTP_PASS || 'rqzhjcgpeapcnhxr';
+
+    this.fromAddress = process.env.SMTP_FROM || `Baselios Poulose II Catholicose College <${user}>`;
 
     if (host && user && pass && pass !== 'college_smtp_password') {
       try {
@@ -67,9 +70,10 @@ export class MailService {
     if (this.transporter) {
       try {
         await this.transporter.sendMail({
-          from: process.env.SMTP_FROM || 'College Office <office@college.edu>',
+          from: this.fromAddress,
           to: studentEmail,
           subject: 'Action Required: Admission Data Verification Correction',
+          text: `Dear ${studentName} (${admissionNumber}),\n\nThe college office has reviewed your profile and flagged mistakes requiring correction. Please log in to your student app to review and update.\n\nBaselios Poulose II Catholicose College`,
           html,
         });
         console.log(`[MailService] Email successfully delivered to ${studentEmail}`);
@@ -111,13 +115,14 @@ export class MailService {
 
     if (this.transporter) {
       try {
-        await this.transporter.sendMail({
-          from: process.env.SMTP_FROM || 'College Office <office@college.edu>',
+        const info = await this.transporter.sendMail({
+          from: this.fromAddress,
           to: studentEmail,
-          subject: `${otp} is your College Portal Password Reset OTP`,
+          subject: `BPC College: ${otp} is your Password Reset Code`,
+          text: `Dear ${studentName},\n\nYour One-Time Password (OTP) for resetting your password on the BPC College Portal is: ${otp}\n\nThis verification code is valid for 10 minutes.\n\nBaselios Poulose II Catholicose College, Piravom`,
           html,
         });
-        console.log(`[MailService] Reset OTP successfully delivered to ${studentEmail}`);
+        console.log(`[MailService] Reset OTP successfully delivered to ${studentEmail} [MsgID: ${info.messageId}]`);
         return true;
       } catch (err) {
         console.error(`[MailService] Failed to send OTP to ${studentEmail}:`, err);
