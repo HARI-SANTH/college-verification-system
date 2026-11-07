@@ -2,7 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const prisma = new PrismaClient();
 async function main() {
-  const hash = await bcrypt.hash('Password@123', 10);
+  const hash = await bcrypt.hash('@Howler56', 10);
   const user = await prisma.user.updateMany({
     where: { email: 'harisanths56@gmail.com' },
     data: { passwordHash: hash }

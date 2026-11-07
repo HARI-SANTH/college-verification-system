@@ -17,5 +17,8 @@ dev.db
 dev.db-journal
 uploads/
 
-# Screenshots
+# Screenshots & Binaries
 *.png
+*.exe
+*.apk
+cloudflared.exe

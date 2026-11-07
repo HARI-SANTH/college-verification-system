@@ -58,23 +58,34 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/principal', principalRoutes);
 
 // Serve frontend static build in cloud / production mode
-const clientBuildPath = path.resolve(__dirname, '../../web/dist');
-const altClientBuildPath = path.resolve(__dirname, '../public');
+const candidatePaths = [
+  path.resolve(process.cwd(), 'public'),
+  path.resolve(process.cwd(), 'backend/public'),
+  path.resolve(__dirname, '../public'),
+  path.resolve(__dirname, '../../public'),
+  path.resolve(__dirname, '../../web/dist'),
+  path.resolve(process.cwd(), 'web/dist'),
+];
 
-const resolvedStaticPath = fs.existsSync(clientBuildPath)
-  ? clientBuildPath
-  : fs.existsSync(altClientBuildPath)
-  ? altClientBuildPath
-  : null;
+let resolvedStaticPath: string | null = null;
+for (const p of candidatePaths) {
+  if (fs.existsSync(p) && fs.existsSync(path.join(p, 'index.html'))) {
+    resolvedStaticPath = p;
+    break;
+  }
+}
 
 if (resolvedStaticPath) {
+  console.log(`[Frontend] Serving static admin web app from: ${resolvedStaticPath}`);
   app.use(express.static(resolvedStaticPath));
   app.get('*', (req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
       return next();
     }
-    res.sendFile(path.join(resolvedStaticPath, 'index.html'));
+    res.sendFile(path.join(resolvedStaticPath!, 'index.html'));
   });
+} else {
+  console.warn('[Frontend] No static web bundle found in candidate paths.');
 }
 
 // Global Error Handler
