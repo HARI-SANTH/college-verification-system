@@ -47,6 +47,49 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
+  String _calculateSemesterText(String timePeriod) {
+    if (timePeriod.trim().isEmpty) return 'SEMESTER 1';
+
+    // Extract start year (4 digits)
+    final startMatch = RegExp(r'(\d{4})').firstMatch(timePeriod);
+    final startYear = startMatch != null ? int.tryParse(startMatch.group(1)!) ?? 2024 : 2024;
+
+    final now = DateTime.now();
+    final currentYear = now.year;
+    final currentMonth = now.month;
+
+    // Academic year runs approximately June to May in Indian colleges:
+    // Months 6..11 (June - November) = Odd Semester (Sem 1, 3, 5, 7)
+    // Months 12, 1..5 (December - May) = Even Semester (Sem 2, 4, 6, 8)
+    int academicYearIndex;
+    if (currentMonth >= 6) {
+      academicYearIndex = currentYear - startYear;
+    } else {
+      academicYearIndex = (currentYear - 1) - startYear;
+    }
+    if (academicYearIndex < 0) academicYearIndex = 0;
+
+    // First 6 months (June-Nov) -> Semester 1 of that year
+    // Second 6 months (Dec-May) -> Semester 2 of that year
+    final isFirstHalf = (currentMonth >= 6 && currentMonth <= 11);
+    final semInYear = isFirstHalf ? 1 : 2;
+
+    final calculatedSem = (academicYearIndex * 2) + semInYear;
+
+    // Determine max semesters based on end year (e.g. 2024-2028 = 4 years = 8 semesters)
+    int maxSem = 8;
+    final endMatch = RegExp(r'(\d{4})[^\d]+(\d{2,4})').firstMatch(timePeriod);
+    if (endMatch != null) {
+      var rawEnd = int.tryParse(endMatch.group(2)!) ?? (startYear + 4);
+      if (rawEnd < 100) rawEnd += 2000;
+      final totalYears = rawEnd - startYear;
+      if (totalYears > 0) maxSem = totalYears * 2;
+    }
+
+    final finalSem = calculatedSem.clamp(1, maxSem);
+    return 'SEMESTER $finalSem';
+  }
+
   void _navigateToForm() async {
     final updated = await Navigator.push<StudentProfile>(
       context,
@@ -84,21 +127,24 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: const [
                   Text(
                     'BASELIOS POULOSE II CATHOLICOSE COLLEGE',
                     style: TextStyle(
                       color: Color(0xFF1E3A8A),
-                      fontSize: 10,
+                      fontSize: 9.5,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
+                      letterSpacing: 0.3,
+                      height: 1.15,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    maxLines: 2,
+                    softWrap: true,
                   ),
+                  SizedBox(height: 2),
                   Text(
                     'Piravom • Student Digital Portal',
-                    style: TextStyle(color: Color(0xFF64748B), fontSize: 10, fontWeight: FontWeight.w500),
+                    style: TextStyle(color: Color(0xFF64748B), fontSize: 9.5, fontWeight: FontWeight.w500),
                   ),
                 ],
               ),
@@ -137,9 +183,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: const Color(0xFF86F2E4).withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: const Text(
-                          'SEMESTER 1',
-                          style: TextStyle(
+                        child: Text(
+                          _calculateSemesterText(_profile.timePeriodOfStudy),
+                          style: const TextStyle(
                             color: Color(0xFF006F66),
                             fontSize: 9,
                             fontWeight: FontWeight.w800,
@@ -265,25 +311,35 @@ class _HomeScreenState extends State<HomeScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                const Text(
-                                  'Action Needed: Correction Required',
-                                  style: TextStyle(
-                                    color: Color(0xFF92400E),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
+                                const Expanded(
+                                  child: Text(
+                                    'Action Needed: Correction Required',
+                                    style: TextStyle(
+                                      color: Color(0xFF92400E),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
+                                const SizedBox(width: 8),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                                   decoration: BoxDecoration(
                                     color: const Color(0xFFF59E0B),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: const Text(
                                     'HIGH PRIORITY',
-                                    style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 7.5,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.3,
+                                    ),
                                   ),
                                 ),
                               ],

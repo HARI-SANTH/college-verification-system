@@ -107,48 +107,60 @@ class _CreditCardIDWidgetState extends State<CreditCardIDWidget> {
                     // Top Header Row: College Crest + Digital Status
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 36,
-                              height: 36,
-                              padding: const EdgeInsets.all(3),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-                              ),
-                              child: Image.asset(
-                                'assets/images/college_logo.png',
-                                fit: BoxFit.contain,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: const [
-                                Text(
-                                  'BPC COLLEGE PIRAVOM',
-                                  style: TextStyle(
-                                    color: Color(0xFF86F2E4),
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 1.0,
-                                  ),
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 34,
+                                height: 34,
+                                padding: const EdgeInsets.all(2.5),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
                                 ),
-                                Text(
-                                  'Baselios Poulose II Catholicose College',
-                                  style: TextStyle(color: Colors.white70, fontSize: 8, fontWeight: FontWeight.w500),
+                                child: Image.asset(
+                                  'assets/images/college_logo.png',
+                                  fit: BoxFit.contain,
                                 ),
-                              ],
-                            ),
-                          ],
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: const [
+                                    Text(
+                                      'BPC COLLEGE PIRAVOM',
+                                      style: TextStyle(
+                                        color: Color(0xFF86F2E4),
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.8,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    SizedBox(height: 1),
+                                    Text(
+                                      'Baselios Poulose II Catholicose College',
+                                      style: TextStyle(color: Colors.white70, fontSize: 7.5, fontWeight: FontWeight.w500),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                        const SizedBox(width: 8),
 
                         // Status Pill with Live Indicator
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                           decoration: BoxDecoration(
                             color: isVerified
                                 ? const Color(0xFF86F2E4).withValues(alpha: 0.18)
@@ -168,8 +180,8 @@ class _CreditCardIDWidgetState extends State<CreditCardIDWidget> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Container(
-                                width: 6,
-                                height: 6,
+                                width: 5.5,
+                                height: 5.5,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   color: isVerified
@@ -179,7 +191,7 @@ class _CreditCardIDWidgetState extends State<CreditCardIDWidget> {
                                           : Colors.lightBlueAccent,
                                 ),
                               ),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 5),
                               Text(
                                 isVerified
                                     ? 'VERIFIED'
@@ -192,9 +204,9 @@ class _CreditCardIDWidgetState extends State<CreditCardIDWidget> {
                                       : isCorrection
                                           ? Colors.amberAccent
                                           : Colors.white,
-                                  fontSize: 9,
+                                  fontSize: 8.5,
                                   fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.8,
+                                  letterSpacing: 0.5,
                                 ),
                               ),
                             ],
