@@ -77,14 +77,18 @@ export const AuthModal: React.FC<Props> = ({ onAuthSuccess, onQuickDemoLogin }) 
       <div className="bg-white max-w-xl w-full rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
         {/* Header Banner */}
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-900 p-8 text-white text-center">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-inner mb-3">
-            <GraduationCap className="w-8 h-8 text-blue-300" />
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-white p-1 border border-white/20 flex items-center justify-center shadow-lg mb-3">
+            <img
+              src="/college_logo.png"
+              alt="BPC College Logo"
+              className="w-full h-full object-contain"
+            />
           </div>
           <h2 className="text-xl font-black uppercase tracking-tight text-white">
-            APEX COLLEGE OF ARTS & SCIENCE
+            BASELIOS PAULOSE II CATHOLICOSE COLLEGE
           </h2>
           <p className="text-xs text-blue-200 mt-1">
-            Student Admissions, ID Generation & Office Verification Portal
+            Piravom • Student Admissions, ID Generation & Office Verification Portal
           </p>
 
           {/* Tab Selector */}

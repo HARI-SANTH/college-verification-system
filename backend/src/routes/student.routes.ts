@@ -2,10 +2,48 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../prisma';
 import { authenticateToken, requireRole } from '../middleware/auth';
 import { Role, VerificationStatus, FieldFlagDetail } from '../types';
-import { uploadMiddleware, getPublicFileUrl } from '../services/storage.service';
+import { uploadMiddleware, getPublicFileUrl, uploadFileToCloud } from '../services/storage.service';
 import fs from 'fs';
 
 const router = Router();
+
+const ALIAS_MAP: Record<string, string[]> = {
+  PLUS_TWO_CERTIFICATE: ['PLUS_TWO_CERT'],
+  PLUS_TWO_CERT: ['PLUS_TWO_CERTIFICATE'],
+  SSLC_CERTIFICATE: ['SSLC_CERT'],
+  SSLC_CERT: ['SSLC_CERTIFICATE'],
+  INCOME_CERTIFICATE: ['INCOME_CERT'],
+  INCOME_CERT: ['INCOME_CERTIFICATE'],
+  COMMUNITY_CERTIFICATE: ['COMMUNITY_CERT'],
+  COMMUNITY_CERT: ['COMMUNITY_CERTIFICATE'],
+  CASTE_CERTIFICATE: ['CASTE_CERT'],
+  CASTE_CERT: ['CASTE_CERTIFICATE'],
+  APAAR_DOCUMENT: ['APAAR_CARD'],
+  APAAR_CARD: ['APAAR_DOCUMENT'],
+  PROFILE_PHOTO: ['photoUrl', 'photo'],
+  photoUrl: ['PROFILE_PHOTO'],
+  photo: ['PROFILE_PHOTO'],
+};
+
+const CANONICAL_DOC_MAP: Record<string, string> = {
+  PLUS_TWO_CERT: 'PLUS_TWO_CERTIFICATE',
+  PLUS_TWO_CERTIFICATE: 'PLUS_TWO_CERTIFICATE',
+  SSLC_CERT: 'SSLC_CERTIFICATE',
+  SSLC_CERTIFICATE: 'SSLC_CERTIFICATE',
+  ALLOTMENT_MEMO: 'ALLOTMENT_MEMO',
+  INCOME_CERT: 'INCOME_CERTIFICATE',
+  INCOME_CERTIFICATE: 'INCOME_CERTIFICATE',
+  COMMUNITY_CERT: 'COMMUNITY_CERTIFICATE',
+  COMMUNITY_CERTIFICATE: 'COMMUNITY_CERTIFICATE',
+  CASTE_CERT: 'CASTE_CERTIFICATE',
+  CASTE_CERTIFICATE: 'CASTE_CERTIFICATE',
+  BANK_PASSBOOK: 'BANK_PASSBOOK',
+  APAAR_CARD: 'APAAR_DOCUMENT',
+  APAAR_DOCUMENT: 'APAAR_DOCUMENT',
+  PROFILE_PHOTO: 'PROFILE_PHOTO',
+  photoUrl: 'PROFILE_PHOTO',
+  photo: 'PROFILE_PHOTO',
+};
 
 // Ensure all student routes require STUDENT role
 router.use(authenticateToken, requireRole(Role.STUDENT));
@@ -31,8 +69,13 @@ router.get('/profile', async (req: Request, res: Response) => {
       parsedFlags = {};
     }
 
+    const photoDoc = profile.documents.find(
+      (d) => d.type === 'PROFILE_PHOTO' || d.type === 'photo'
+    );
+
     return res.json({
       ...profile,
+      photoUrl: photoDoc ? photoDoc.fileUrl : null,
       fieldFlags: parsedFlags,
     });
   } catch (err) {
@@ -95,6 +138,10 @@ router.put('/profile', async (req: Request, res: Response) => {
       'annualIncome',
       'parentName',
       'parentOccupation',
+      'fatherName',
+      'fatherOccupation',
+      'motherName',
+      'motherOccupation',
       'guardianName',
       'guardianOccupation',
       'bankAccountName',
@@ -114,18 +161,22 @@ router.put('/profile', async (req: Request, res: Response) => {
     const dataToUpdate: Record<string, any> = {};
 
     if (currentStatus === VerificationStatus.CORRECTION_REQUIRED) {
-      // ONLY allow updating fields that were explicitly flagged by the office!
-      for (const key of Object.keys(payload)) {
-        if (!allowedKeys.includes(key)) continue;
+      // ONLY allow updating fields that were explicitly flagged by the office (including aliases)
+      for (const key of allowedKeys) {
+        if (payload[key] === undefined) continue;
 
-        if (parsedFlags[key]?.status === 'FLAGGED_ERROR') {
+        const aliases = ALIAS_MAP[key] || [];
+        const isFlagged = [key, ...aliases].some(
+          (k) => parsedFlags[k]?.status === 'FLAGGED_ERROR'
+        );
+
+        if (isFlagged) {
           dataToUpdate[key] = payload[key];
-          // Clear this field's flag once edited
+          // Clear this field's flags and all aliases once edited
           delete parsedFlags[key];
-        } else if (payload[key] !== (profile as any)[key] && payload[key] !== undefined) {
-          return res.status(403).json({
-            error: `Field '${key}' is verified/locked and cannot be edited. You may only edit flagged fields.`,
-          });
+          for (const a of aliases) {
+            delete parsedFlags[a];
+          }
         }
       }
     } else {
@@ -163,10 +214,15 @@ router.put('/profile', async (req: Request, res: Response) => {
       },
     });
 
+    const photoDoc = updatedProfile.documents.find(
+      (d) => d.type === 'PROFILE_PHOTO' || d.type === 'photo'
+    );
+
     return res.json({
       message: 'Profile updated successfully',
       profile: {
         ...updatedProfile,
+        photoUrl: photoDoc ? photoDoc.fileUrl : null,
         fieldFlags: parsedFlags,
       },
     });
@@ -216,26 +272,37 @@ router.post('/documents', uploadMiddleware.single('file'), async (req: Request, 
       return res.status(403).json({ error: 'Profile is currently under review. Document upload is locked.' });
     }
 
+    const canonicalType = CANONICAL_DOC_MAP[docType] || docType;
+
     if (profile.verificationStatus === VerificationStatus.CORRECTION_REQUIRED) {
-      // Only allow if this specific document was flagged
-      if (parsedFlags[docType]?.status !== 'FLAGGED_ERROR') {
+      // Check if this document or any of its aliases was flagged
+      const aliases = ALIAS_MAP[docType] || ALIAS_MAP[canonicalType] || [];
+      const allKeys = [docType, canonicalType, ...aliases];
+      const isFlagged = allKeys.some(
+        (k) => parsedFlags[k]?.status === 'FLAGGED_ERROR'
+      );
+
+      if (!isFlagged) {
         fs.unlinkSync(req.file.path);
         return res.status(403).json({
           error: `Document '${docType}' was not flagged for correction and cannot be re-uploaded.`,
         });
       }
-      // Remove flag on re-upload
-      delete parsedFlags[docType];
+
+      // Remove all matching flag aliases on re-upload
+      for (const k of allKeys) {
+        delete parsedFlags[k];
+      }
     }
 
-    const fileUrl = getPublicFileUrl(req.file.path);
+    const fileUrl = await uploadFileToCloud(req.file.path, req.file.originalname, req.file.mimetype);
 
-    // Upsert the document
+    // Upsert the document with canonical type
     const document = await prisma.studentDocument.upsert({
       where: {
         studentProfileId_type: {
           studentProfileId: profile.id,
-          type: docType,
+          type: canonicalType,
         },
       },
       update: {
@@ -249,13 +316,14 @@ router.post('/documents', uploadMiddleware.single('file'), async (req: Request, 
       },
       create: {
         studentProfileId: profile.id,
-        type: docType,
+        type: canonicalType,
         fileName: req.file.originalname,
         filePath: req.file.path,
         fileUrl,
         fileMimeType: req.file.mimetype,
         fileSize: req.file.size,
         status: 'VALID',
+        flagReason: null,
       },
     });
 

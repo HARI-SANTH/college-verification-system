@@ -70,15 +70,17 @@ export const CreditCardID: React.FC<Props> = ({ profile }) => {
             {/* Header: College Crest & Status */}
             <div className="flex items-start justify-between relative z-10">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-amber-200 text-slate-950 flex items-center justify-center font-black shadow-lg">
-                  <ShieldCheck className="w-5 h-5 text-slate-900" />
-                </div>
+                <img
+                  src="/college_logo.png"
+                  alt="BPC College Logo"
+                  className="w-9 h-9 object-contain rounded-xl bg-white p-0.5 shadow-md"
+                />
                 <div>
                   <h3 className="text-xs font-extrabold tracking-wider uppercase text-blue-200 leading-tight">
-                    APEX COLLEGE
+                    BASELIOS PAULOSE II CATHOLICOSE COLLEGE
                   </h3>
                   <p className="text-[10px] text-slate-400 font-medium tracking-widest uppercase">
-                    Digital Student Card
+                    Piravom • Digital Student ID
                   </p>
                 </div>
               </div>

@@ -38,15 +38,17 @@ export const Navbar: React.FC<Props> = ({ auth, onLogout, onQuickLogin }) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         {/* Left: Branding */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg font-black text-white text-base">
-            🎓
-          </div>
+          <img
+            src="/college_logo.png"
+            alt="BPC College Logo"
+            className="w-10 h-10 object-contain rounded-xl bg-white p-0.5 shadow-sm"
+          />
           <div>
             <h1 className="text-sm font-extrabold tracking-tight uppercase text-white">
-              APEX COLLEGE OF ARTS & SCIENCE
+              BASELIOS PAULOSE II CATHOLICOSE COLLEGE
             </h1>
             <p className="text-[10px] text-blue-300 tracking-wider">
-              Student Records & Admission Verification Portal
+              Piravom • Student Records & Admission Verification Portal
             </p>
           </div>
         </div>

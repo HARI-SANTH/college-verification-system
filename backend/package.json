@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
+    "postinstall": "prisma generate",
     "dev": "tsx watch src/server.ts",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
@@ -13,6 +14,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.21.1",
+    "@supabase/supabase-js": "^2.119.0",
     "archiver": "^7.0.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

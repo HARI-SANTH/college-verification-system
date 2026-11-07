@@ -90,10 +90,29 @@ export const StudentForm: React.FC<Props> = ({ profile, onProfileUpdated, onBack
     return false;
   };
 
+  const DOC_ALIASES: Record<string, string[]> = {
+    PLUS_TWO_CERTIFICATE: ['PLUS_TWO_CERT'],
+    PLUS_TWO_CERT: ['PLUS_TWO_CERTIFICATE'],
+    SSLC_CERTIFICATE: ['SSLC_CERT'],
+    SSLC_CERT: ['SSLC_CERTIFICATE'],
+    INCOME_CERTIFICATE: ['INCOME_CERT'],
+    INCOME_CERT: ['INCOME_CERTIFICATE'],
+    COMMUNITY_CERTIFICATE: ['COMMUNITY_CERT'],
+    COMMUNITY_CERT: ['COMMUNITY_CERTIFICATE'],
+    CASTE_CERTIFICATE: ['CASTE_CERT'],
+    CASTE_CERT: ['CASTE_CERTIFICATE'],
+    APAAR_DOCUMENT: ['APAAR_CARD'],
+    APAAR_CARD: ['APAAR_DOCUMENT'],
+    PROFILE_PHOTO: ['photoUrl', 'photo'],
+    photoUrl: ['PROFILE_PHOTO'],
+  };
+
   const isDocDisabled = (docType: string) => {
     if (isLocked) return true;
     if (isCorrectionMode) {
-      return flags[docType]?.status !== 'FLAGGED_ERROR';
+      const aliases = DOC_ALIASES[docType] || [];
+      const isFlagged = [docType, ...aliases].some((k) => flags[k]?.status === 'FLAGGED_ERROR');
+      return !isFlagged;
     }
     return false;
   };

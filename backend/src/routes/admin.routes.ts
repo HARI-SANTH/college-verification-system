@@ -3,6 +3,7 @@ import { prisma } from '../prisma';
 import { authenticateToken, requireRole } from '../middleware/auth';
 import { Role, VerificationStatus, FieldFlagDetail } from '../types';
 import { mailService } from '../services/mail.service';
+import { aiVerifierService } from '../services/ai-verifier.service';
 import ExcelJS from 'exceljs';
 import archiver from 'archiver';
 import path from 'path';
@@ -53,6 +54,66 @@ const buildStudentFilter = (query: any) => {
   return where;
 };
 
+// 0. Dashboard Stats & Analytics for Office Admin
+router.get('/stats', async (req: Request, res: Response) => {
+  try {
+    const totalStudents = await prisma.studentProfile.count();
+    const [draftCount, submittedCount, correctionCount, verifiedCount] = await Promise.all([
+      prisma.studentProfile.count({ where: { verificationStatus: 'DRAFT' } }),
+      prisma.studentProfile.count({ where: { verificationStatus: 'SUBMITTED' } }),
+      prisma.studentProfile.count({ where: { verificationStatus: 'CORRECTION_REQUIRED' } }),
+      prisma.studentProfile.count({ where: { verificationStatus: 'VERIFIED' } }),
+    ]);
+
+    const ewsCount = await prisma.studentProfile.count({
+      where: { isEws: true },
+    });
+
+    const courseStats = await prisma.studentProfile.groupBy({
+      by: ['courseAdmitted'],
+      _count: { id: true },
+    });
+
+    const quotaStats = await prisma.studentProfile.groupBy({
+      by: ['quota'],
+      _count: { id: true },
+    });
+
+    const recentAuditLogs = await prisma.auditLog.findMany({
+      take: 10,
+      orderBy: { timestamp: 'desc' },
+      include: {
+        admin: {
+          select: { email: true, role: true },
+        },
+      },
+    });
+
+    return res.json({
+      totalStudents,
+      statusPipeline: {
+        draft: draftCount,
+        submitted: submittedCount,
+        correctionRequired: correctionCount,
+        verified: verifiedCount,
+      },
+      ewsCount,
+      byCourse: courseStats.map((c) => ({
+        course: c.courseAdmitted || 'Unassigned',
+        count: c._count.id,
+      })),
+      byQuota: quotaStats.map((q) => ({
+        quota: q.quota || 'General',
+        count: q._count.id,
+      })),
+      recentActivity: recentAuditLogs,
+    });
+  } catch (err) {
+    console.error('[Admin Stats Error]', err);
+    return res.status(500).json({ error: 'Failed to fetch admin stats' });
+  }
+});
+
 // 1. List students with multi-parameter filtering
 router.get('/students', async (req: Request, res: Response) => {
   try {
@@ -96,7 +157,7 @@ router.get('/students', async (req: Request, res: Response) => {
 router.get('/students/:id', async (req: Request, res: Response) => {
   try {
     const student = await prisma.studentProfile.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       include: {
         user: {
           select: {
@@ -137,8 +198,13 @@ router.post('/students/:id/flag', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'At least one field flag with reason is required' });
     }
 
-    const student = await prisma.studentProfile.findUnique({
-      where: { id: req.params.id },
+    const student: any = await prisma.studentProfile.findFirst({
+      where: {
+        OR: [
+          { id: req.params.id as string },
+          { admissionNumber: req.params.id as string },
+        ],
+      },
       include: {
         user: true,
         documents: true,
@@ -156,19 +222,47 @@ router.post('/students/:id/flag', async (req: Request, res: Response) => {
 
     const flaggedListForEmail: Array<{ fieldOrDoc: string; reason: string }> = [];
 
+    const ALIAS_MAP: Record<string, string[]> = {
+      PLUS_TWO_CERTIFICATE: ['PLUS_TWO_CERT'],
+      PLUS_TWO_CERT: ['PLUS_TWO_CERTIFICATE'],
+      SSLC_CERTIFICATE: ['SSLC_CERT'],
+      SSLC_CERT: ['SSLC_CERTIFICATE'],
+      INCOME_CERTIFICATE: ['INCOME_CERT'],
+      INCOME_CERT: ['INCOME_CERTIFICATE'],
+      COMMUNITY_CERTIFICATE: ['COMMUNITY_CERT'],
+      COMMUNITY_CERT: ['COMMUNITY_CERTIFICATE'],
+      CASTE_CERTIFICATE: ['CASTE_CERT'],
+      CASTE_CERT: ['CASTE_CERTIFICATE'],
+      APAAR_DOCUMENT: ['APAAR_CARD'],
+      APAAR_CARD: ['APAAR_DOCUMENT'],
+      PROFILE_PHOTO: ['photoUrl'],
+      photoUrl: ['PROFILE_PHOTO'],
+      fatherName: ['parentName'],
+      parentName: ['fatherName'],
+      fatherOccupation: ['parentOccupation'],
+      parentOccupation: ['fatherOccupation'],
+    };
+
     for (const flag of flags) {
-      currentFlags[flag.key] = {
+      const flagDetail: FieldFlagDetail = {
         status: 'FLAGGED_ERROR',
         reason: flag.reason,
         flaggedAt: new Date().toISOString(),
       };
+      currentFlags[flag.key] = flagDetail;
+      const aliases = ALIAS_MAP[flag.key] || [];
+      for (const a of aliases) {
+        currentFlags[a] = flagDetail;
+      }
+
       flaggedListForEmail.push({
         fieldOrDoc: flag.key,
         reason: flag.reason,
       });
 
-      // Also mark in documents table if key matches a document
-      const matchingDoc = student.documents.find((d) => d.type === flag.key);
+      // Also mark in documents table if key matches a document or its aliases
+      const allMatchingKeys = [flag.key, ...aliases];
+      const matchingDoc = student.documents?.find((d: any) => allMatchingKeys.includes(d.type));
       if (matchingDoc) {
         await prisma.studentDocument.update({
           where: { id: matchingDoc.id },
@@ -226,8 +320,13 @@ router.post('/students/:id/flag', async (req: Request, res: Response) => {
 // 4. Mark student as VERIFIED
 router.post('/students/:id/verify', async (req: Request, res: Response) => {
   try {
-    const student = await prisma.studentProfile.findUnique({
-      where: { id: req.params.id },
+    const student = await prisma.studentProfile.findFirst({
+      where: {
+        OR: [
+          { id: req.params.id as string },
+          { admissionNumber: req.params.id as string },
+        ],
+      },
     });
 
     if (!student) {
@@ -270,6 +369,34 @@ router.post('/students/:id/verify', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[Admin Verify Error]', err);
     return res.status(500).json({ error: 'Failed to verify student' });
+  }
+});
+
+// 4b. AI Automated Discrepancy Verification Scan
+router.post('/students/:id/ai-verify', async (req: Request, res: Response) => {
+  try {
+    const student: any = await prisma.studentProfile.findFirst({
+      where: {
+        OR: [
+          { id: req.params.id as string },
+          { admissionNumber: req.params.id as string },
+        ],
+      },
+      include: {
+        user: true,
+        documents: true,
+      },
+    });
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    const auditResult = await aiVerifierService.runAudit(student);
+    return res.json(auditResult);
+  } catch (err) {
+    console.error('[Admin AI Verify Error]', err);
+    return res.status(500).json({ error: 'Failed to perform AI verification audit' });
   }
 });
 

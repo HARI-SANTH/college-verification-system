@@ -56,6 +56,10 @@ export interface StudentProfile {
   annualIncome?: number | null;
   isEws: boolean;
 
+  fatherName?: string | null;
+  fatherOccupation?: string | null;
+  motherName?: string | null;
+  motherOccupation?: string | null;
   parentName?: string | null;
   parentOccupation?: string | null;
   guardianName?: string | null;
@@ -99,4 +103,36 @@ export interface AuthState {
     role: Role;
     studentProfile?: StudentProfile | null;
   } | null;
+}
+
+export interface AdminStats {
+  totalStudents: number;
+  statusPipeline: {
+    draft: number;
+    submitted: number;
+    correctionRequired: number;
+    verified: number;
+  };
+  ewsCount: number;
+  byCourse: Array<{ course: string; count: number }>;
+  byQuota: Array<{ quota: string; count: number }>;
+  recentActivity?: Array<{
+    id: string;
+    action: string;
+    targetId: string;
+    timestamp: string;
+    details?: string | null;
+    admin?: { email: string; role: string };
+  }>;
+}
+
+export interface AdminFilters {
+  search?: string;
+  course?: string;
+  timePeriodOfStudy?: string;
+  gender?: string;
+  religion?: string;
+  quota?: string;
+  isEws?: string;
+  verificationStatus?: string;
 }

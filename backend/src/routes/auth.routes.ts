@@ -7,6 +7,28 @@ import { authenticateToken } from '../middleware/auth';
 import { Role } from '../types';
 
 const router = Router();
+
+// Helper to sanitize and parse student profile with parsed fieldFlags object
+const formatStudentProfile = (profile: any) => {
+  if (!profile) return null;
+  let parsedFlags = {};
+  try {
+    parsedFlags =
+      typeof profile.fieldFlags === 'string'
+        ? JSON.parse(profile.fieldFlags || '{}')
+        : (profile.fieldFlags || {});
+  } catch {
+    parsedFlags = {};
+  }
+  const photoDoc = profile.documents?.find(
+    (d: any) => d.type === 'PROFILE_PHOTO' || d.type === 'photo'
+  );
+  return {
+    ...profile,
+    photoUrl: photoDoc ? photoDoc.fileUrl : profile.photoUrl || null,
+    fieldFlags: parsedFlags,
+  };
+};
 const JWT_SECRET = process.env.JWT_SECRET || 'college_super_secret_jwt_key_2026_xyz987';
 
 const registerSchema = z.object({
@@ -94,7 +116,7 @@ router.post('/register', async (req: Request, res: Response) => {
         email: user.email,
         phoneNumber: user.phoneNumber,
         role: user.role,
-        studentProfile: user.studentProfile,
+        studentProfile: formatStudentProfile(user.studentProfile),
       },
     });
   } catch (err: any) {
@@ -152,7 +174,7 @@ router.post('/login', async (req: Request, res: Response) => {
         email: user.email,
         phoneNumber: user.phoneNumber,
         role: user.role,
-        studentProfile: user.studentProfile,
+        studentProfile: formatStudentProfile(user.studentProfile),
       },
     });
   } catch (err: any) {
@@ -187,7 +209,7 @@ router.get('/me', authenticateToken, async (req: Request, res: Response) => {
       email: user.email,
       phoneNumber: user.phoneNumber,
       role: user.role,
-      studentProfile: user.studentProfile,
+      studentProfile: formatStudentProfile(user.studentProfile),
     });
   } catch (err) {
     console.error('[Me Error]', err);

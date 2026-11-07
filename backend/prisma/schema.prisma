@@ -1,6 +1,7 @@
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 generator client {
@@ -49,6 +50,10 @@ model StudentProfile {
   isEws               Boolean           @default(false) // Auto-computed: income < 100000
 
   // Parent / Guardian Details
+  fatherName          String?
+  fatherOccupation    String?
+  motherName          String?
+  motherOccupation    String?
   parentName          String?
   parentOccupation    String?
   guardianName        String?

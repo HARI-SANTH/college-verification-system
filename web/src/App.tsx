@@ -84,6 +84,16 @@ export const App: React.FC = () => {
     );
   }
 
+  if (auth.user?.role === 'ADMIN') {
+    return (
+      <AdminDashboard
+        auth={auth}
+        onLogout={handleLogout}
+        onQuickLogin={handleQuickLogin}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       <Navbar
@@ -188,9 +198,6 @@ export const App: React.FC = () => {
               onBackToCard={() => setStudentView('id-card')}
             />
           )
-        ) : auth.user.role === 'ADMIN' ? (
-          /* OFFICE STAFF (ADMIN) DASHBOARD */
-          <AdminDashboard />
         ) : auth.user.role === 'SUPER_ADMIN' ? (
           /* PRINCIPAL (SUPER ADMIN) DASHBOARD */
           <PrincipalDashboard />

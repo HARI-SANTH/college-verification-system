@@ -94,6 +94,15 @@ export const api = {
   },
 
   // Admin
+  async getAdminStats() {
+    const res = await fetch(`${API_BASE}/admin/stats`, {
+      headers: getHeaders(),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Failed to fetch admin stats');
+    return json;
+  },
+
   async getStudents(filters: Record<string, string | boolean | undefined>) {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([key, val]) => {
@@ -137,6 +146,16 @@ export const api = {
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || 'Failed to verify student');
+    return json;
+  },
+
+  async aiVerifyStudent(id: string) {
+    const res = await fetch(`${API_BASE}/admin/students/${id}/ai-verify`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Failed to run AI verification');
     return json;
   },
 

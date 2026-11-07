@@ -171,7 +171,7 @@ router.post('/admins', async (req: Request, res: Response) => {
 router.patch('/admins/:id/toggle', async (req: Request, res: Response) => {
   try {
     const targetUser = await prisma.user.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
     });
 
     if (!targetUser) {

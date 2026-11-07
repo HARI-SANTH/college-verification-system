@@ -16,3 +16,6 @@ ios/.symlinks
 dev.db
 dev.db-journal
 uploads/
+
+# Screenshots
+*.png

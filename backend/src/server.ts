@@ -50,7 +50,15 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   });
 });
 
-app.listen(PORT, () => {
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Process Unhandled Rejection]', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[Process Uncaught Exception]', err);
+});
+
+app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`====================================================`);
   console.log(` College Verification API Server is running`);
   console.log(` Local URL: http://localhost:${PORT}`);
