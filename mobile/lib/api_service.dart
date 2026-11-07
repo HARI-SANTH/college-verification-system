@@ -1,13 +1,15 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
 
 class ApiService {
-  // Default server URL pointing to live cloud backend on Render
-  static String defaultHost = 'https://college-verification-system.onrender.com/api';
+  // Over USB debugging with `adb reverse tcp:5000 tcp:5000`, 127.0.0.1 connects to PC host directly in debug mode.
+  // In release mode or if running standalone, defaults to the deployed Render cloud backend.
+  static String defaultHost = kDebugMode
+      ? 'http://127.0.0.1:5000/api'
+      : 'https://college-verification-system.onrender.com/api';
 
   static Future<String> getBaseUrl() async {
     final prefs = await SharedPreferences.getInstance();
@@ -15,14 +17,6 @@ class ApiService {
     if (custom != null && custom.isNotEmpty) {
       return custom;
     }
-
-    if (kIsWeb) return 'https://college-verification-system.onrender.com/api';
-    try {
-      if (Platform.isAndroid) {
-        // Physical phone or emulator
-        return defaultHost;
-      }
-    } catch (_) {}
     return defaultHost;
   }
 
@@ -106,6 +100,44 @@ class ApiService {
       throw Exception('Student profile could not be created');
     }
     return StudentProfile.fromJson(profData);
+  }
+
+  static Future<Map<String, dynamic>> forgotPassword(String identifier) async {
+    final baseUrl = await getBaseUrl();
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/forgot-password'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'identifier': identifier.trim()}),
+    );
+
+    final data = jsonDecode(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(data['error'] ?? 'Failed to send password reset code');
+    }
+    return data;
+  }
+
+  static Future<String> resetPassword({
+    required String identifier,
+    required String otp,
+    required String newPassword,
+  }) async {
+    final baseUrl = await getBaseUrl();
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/reset-password'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'identifier': identifier.trim(),
+        'otp': otp.trim(),
+        'newPassword': newPassword,
+      }),
+    );
+
+    final data = jsonDecode(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(data['error'] ?? 'Failed to reset password');
+    }
+    return data['message'] ?? 'Password reset successfully!';
   }
 
   static Future<StudentProfile> getProfile() async {

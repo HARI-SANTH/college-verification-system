@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -28,7 +29,7 @@ const uploadsDirectory = getUploadsRoot();
 app.use('/uploads', express.static(uploadsDirectory));
 
 // Root & Health check endpoints
-app.get(['/', '/api'], (req: Request, res: Response) => {
+app.get('/api', (req: Request, res: Response) => {
   res.json({
     status: 'online',
     service: 'College Student Verification Backend API',
@@ -55,6 +56,26 @@ app.use('/api/auth', authRoutes);
 app.use('/api/student', studentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/principal', principalRoutes);
+
+// Serve frontend static build in cloud / production mode
+const clientBuildPath = path.resolve(__dirname, '../../web/dist');
+const altClientBuildPath = path.resolve(__dirname, '../public');
+
+const resolvedStaticPath = fs.existsSync(clientBuildPath)
+  ? clientBuildPath
+  : fs.existsSync(altClientBuildPath)
+  ? altClientBuildPath
+  : null;
+
+if (resolvedStaticPath) {
+  app.use(express.static(resolvedStaticPath));
+  app.get('*', (req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+      return next();
+    }
+    res.sendFile(path.join(resolvedStaticPath, 'index.html'));
+  });
+}
 
 // Global Error Handler
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {

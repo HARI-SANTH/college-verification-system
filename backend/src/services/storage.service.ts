@@ -92,15 +92,15 @@ export const uploadFileToCloud = async (filePath: string, originalName: string, 
     }
   }
 
-  // Fallback to local URL
+  // Fallback to URL
   const relativePath = path.relative(uploadsRoot, filePath).replace(/\\/g, '/');
-  const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
+  const baseUrl = process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || 'https://college-verification-system.onrender.com';
   return `${baseUrl}/uploads/${relativePath}`;
 };
 
 export const getPublicFileUrl = (filePath: string): string => {
   const relativePath = path.relative(uploadsRoot, filePath).replace(/\\/g, '/');
-  const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
+  const baseUrl = process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || 'https://college-verification-system.onrender.com';
   return `${baseUrl}/uploads/${relativePath}`;
 };
 

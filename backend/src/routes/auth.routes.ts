@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { prisma } from '../prisma';
 import { authenticateToken } from '../middleware/auth';
 import { Role } from '../types';
+import { mailService } from '../services/mail.service';
 
 const router = Router();
 
@@ -214,6 +215,151 @@ router.get('/me', authenticateToken, async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[Me Error]', err);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Forgot / Reset Password Schemas & OTP Store
+const forgotPasswordSchema = z.object({
+  identifier: z.string().min(1, 'Email, phone, or roll number is required'),
+});
+
+const resetPasswordSchema = z.object({
+  identifier: z.string().min(1, 'Email, phone, or roll number is required'),
+  otp: z.string().min(4, 'Valid OTP is required'),
+  newPassword: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
+// In-memory OTP store: key -> { otp, expiresAt, email }
+const resetOtpStore = new Map<string, { otp: string; expiresAt: number; email: string }>();
+
+const maskEmail = (email: string) => {
+  const [name, domain] = email.split('@');
+  if (!name || !domain) return email;
+  const visible = name.length > 2 ? name.slice(0, 2) : name[0];
+  return `${visible}***@${domain}`;
+};
+
+// 4. Request Password Reset OTP
+router.post('/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { identifier } = forgotPasswordSchema.parse(req.body);
+    const trimmed = identifier.trim();
+
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: trimmed.toLowerCase() },
+          { phoneNumber: trimmed },
+          { studentProfile: { admissionNumber: trimmed.toUpperCase() } },
+        ],
+      },
+      include: {
+        studentProfile: true,
+      },
+    });
+
+    if (!user || !user.isActive) {
+      return res.status(404).json({
+        error: 'No active student account found for this email, phone, or roll number.',
+      });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    const payload = { otp, expiresAt, email: user.email };
+    resetOtpStore.set(user.id, payload);
+    resetOtpStore.set(user.email.toLowerCase(), payload);
+    if (user.phoneNumber) {
+      resetOtpStore.set(user.phoneNumber, payload);
+    }
+    if (user.studentProfile?.admissionNumber) {
+      resetOtpStore.set(user.studentProfile.admissionNumber.toUpperCase(), payload);
+    }
+
+    const studentName = user.studentProfile?.firstName || 'Student';
+
+    // Dispatch email notification
+    await mailService.sendPasswordResetOtp({
+      studentEmail: user.email,
+      studentName,
+      otp,
+    });
+
+    return res.json({
+      message: `A 6-digit OTP has been sent to ${maskEmail(user.email)}`,
+      email: maskEmail(user.email),
+    });
+  } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation error', details: err.errors });
+    }
+    console.error('[Forgot Password Error]', err);
+    return res.status(500).json({ error: 'Failed to process password reset request' });
+  }
+});
+
+// 5. Verify OTP & Reset Password
+router.post('/reset-password', async (req: Request, res: Response) => {
+  try {
+    const { identifier, otp, newPassword } = resetPasswordSchema.parse(req.body);
+    const trimmed = identifier.trim();
+
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: trimmed.toLowerCase() },
+          { phoneNumber: trimmed },
+          { studentProfile: { admissionNumber: trimmed.toUpperCase() } },
+        ],
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'Account not found.' });
+    }
+
+    const stored =
+      resetOtpStore.get(user.id) ||
+      resetOtpStore.get(trimmed.toLowerCase()) ||
+      resetOtpStore.get(trimmed) ||
+      resetOtpStore.get(trimmed.toUpperCase());
+
+    if (!stored) {
+      return res.status(400).json({ error: 'No OTP requested or OTP has expired. Please request a new code.' });
+    }
+
+    if (Date.now() > stored.expiresAt) {
+      resetOtpStore.delete(user.id);
+      return res.status(400).json({ error: 'OTP has expired. Please request a new one.' });
+    }
+
+    if (stored.otp !== otp.trim()) {
+      return res.status(400).json({ error: 'Invalid OTP code. Please check and try again.' });
+    }
+
+    // Hash new password and update
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash },
+    });
+
+    // Invalidate OTP
+    resetOtpStore.delete(user.id);
+    resetOtpStore.delete(user.email.toLowerCase());
+    if (user.phoneNumber) resetOtpStore.delete(user.phoneNumber);
+
+    return res.json({
+      message: 'Password reset successful! You may now sign in with your new password.',
+    });
+  } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation error', details: err.errors });
+    }
+    console.error('[Reset Password Error]', err);
+    return res.status(500).json({ error: 'Failed to reset password' });
   }
 });
 
