@@ -1,6 +1,6 @@
 # Node
 node_modules/
-dist/
+web/dist/
 .env
 
 # Flutter / Dart

@@ -1,0 +1,11 @@
+{
+  "name": "college-verification-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Baselios Poulose II Catholicose College Student Data Management & Verification System",
+  "scripts": {
+    "postinstall": "cd backend && npm install",
+    "build": "cd backend && npm run build",
+    "start": "cd backend && npm run start"
+  }
+}

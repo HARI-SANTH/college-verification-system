@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: college-verification-system
+    env: node
+    plan: free
+    buildCommand: cd backend && npm install && npm run build
+    startCommand: cd backend && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        value: harisanths56@gmail.com
+      - key: SMTP_PASS
+        value: rqzhjcgpeapcnhxr

@@ -48,6 +48,20 @@ class ApiService {
     };
   }
 
+  static dynamic _safeJsonDecode(http.Response response) {
+    if (response.body.trim().isEmpty) return {};
+    try {
+      return jsonDecode(response.body);
+    } catch (_) {
+      if (response.statusCode == 404) {
+        throw Exception('The requested feature is not available on this server version (404). Please ensure the backend is up to date.');
+      } else if (response.statusCode >= 500) {
+        throw Exception('Server temporarily unavailable (${response.statusCode}). Please try again in a few moments.');
+      }
+      throw Exception('Received unexpected response from server (${response.statusCode}).');
+    }
+  }
+
   static Future<StudentProfile> login(String identifier, String password) async {
     final baseUrl = await getBaseUrl();
     final response = await http.post(
@@ -56,15 +70,15 @@ class ApiService {
       body: jsonEncode({'identifier': identifier.trim(), 'password': password}),
     );
 
-    final data = jsonDecode(response.body);
+    final data = _safeJsonDecode(response);
     if (response.statusCode != 200) {
-      if (data['details'] != null && data['details'] is List && (data['details'] as List).isNotEmpty) {
+      if (data is Map && data['details'] != null && data['details'] is List && (data['details'] as List).isNotEmpty) {
         final messages = (data['details'] as List)
             .map((d) => d['message'] != null ? '${d['path']?.last ?? ''}: ${d['message']}' : d.toString())
             .join('\n');
         throw Exception(messages);
       }
-      throw Exception(data['error'] ?? 'Login failed. Please check your credentials.');
+      throw Exception((data is Map ? data['error'] : null) ?? 'Login failed. Please check your credentials.');
     }
 
     await saveToken(data['token']);
@@ -83,15 +97,15 @@ class ApiService {
       body: jsonEncode(body),
     );
 
-    final data = jsonDecode(response.body);
+    final data = _safeJsonDecode(response);
     if (response.statusCode != 201) {
-      if (data['details'] != null && data['details'] is List && (data['details'] as List).isNotEmpty) {
+      if (data is Map && data['details'] != null && data['details'] is List && (data['details'] as List).isNotEmpty) {
         final messages = (data['details'] as List)
             .map((d) => d['message'] != null ? '${d['path']?.last ?? ''}: ${d['message']}' : d.toString())
             .join('\n');
         throw Exception(messages);
       }
-      throw Exception(data['error'] ?? 'Registration failed. Please check all fields.');
+      throw Exception((data is Map ? data['error'] : null) ?? 'Registration failed. Please check all fields.');
     }
 
     await saveToken(data['token']);
@@ -110,11 +124,11 @@ class ApiService {
       body: jsonEncode({'identifier': identifier.trim()}),
     );
 
-    final data = jsonDecode(response.body);
+    final data = _safeJsonDecode(response);
     if (response.statusCode != 200) {
-      throw Exception(data['error'] ?? 'Failed to send password reset code');
+      throw Exception((data is Map ? data['error'] : null) ?? 'Failed to send password reset code');
     }
-    return data;
+    return data as Map<String, dynamic>;
   }
 
   static Future<String> resetPassword({
@@ -133,11 +147,11 @@ class ApiService {
       }),
     );
 
-    final data = jsonDecode(response.body);
+    final data = _safeJsonDecode(response);
     if (response.statusCode != 200) {
-      throw Exception(data['error'] ?? 'Failed to reset password');
+      throw Exception((data is Map ? data['error'] : null) ?? 'Failed to reset password');
     }
-    return data['message'] ?? 'Password reset successfully!';
+    return (data is Map ? data['message'] : null) ?? 'Password reset successfully!';
   }
 
   static Future<StudentProfile> getProfile() async {
