@@ -47,6 +47,76 @@ export class MailService {
     }
   }
 
+  private async dispatchEmail(options: { to: string; subject: string; text: string; html: string }): Promise<boolean> {
+    const { to, subject, text, html } = options;
+
+    // 1. Google Apps Script HTTPS Webhook (Port 443 - Bypasses Render SMTP port block)
+    if (process.env.GMAIL_HTTP_URL) {
+      try {
+        console.log(`[MailService] Dispatching via Google Apps Script HTTPS webhook to ${to}...`);
+        const res = await fetch(process.env.GMAIL_HTTP_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to, subject, text, html }),
+        });
+        if (res.ok) {
+          console.log(`[MailService] Successfully sent via Google HTTPS webhook to ${to}`);
+          return true;
+        }
+        console.warn(`[MailService] Google HTTPS webhook returned status ${res.status}`);
+      } catch (httpErr) {
+        console.error(`[MailService] Google HTTPS webhook error:`, httpErr);
+      }
+    }
+
+    // 2. Resend HTTPS API (Port 443)
+    if (process.env.RESEND_API_KEY) {
+      try {
+        console.log(`[MailService] Dispatching via Resend HTTPS API to ${to}...`);
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+          },
+          body: JSON.stringify({
+            from: process.env.RESEND_FROM || 'BPC College <onboarding@resend.dev>',
+            to: [to],
+            subject,
+            text,
+            html,
+          }),
+        });
+        if (res.ok) {
+          console.log(`[MailService] Successfully sent via Resend HTTPS API to ${to}`);
+          return true;
+        }
+      } catch (resendErr) {
+        console.error(`[MailService] Resend HTTPS API error:`, resendErr);
+      }
+    }
+
+    // 3. Fallback: Raw SMTP (Works on local machine or paid instances with open ports)
+    if (this.transporter) {
+      try {
+        const info = await this.transporter.sendMail({
+          from: this.fromAddress,
+          to,
+          subject,
+          text,
+          html,
+        });
+        console.log(`[MailService] Email successfully delivered via SMTP to ${to} [MsgID: ${info.messageId}]`);
+        return true;
+      } catch (err) {
+        console.error(`[MailService] Failed to send email via SMTP to ${to}:`, err);
+        return false;
+      }
+    }
+
+    return false;
+  }
+
   async sendFlagNotification(params: FlagNotificationParams): Promise<boolean> {
     const { studentEmail, studentName, admissionNumber, flaggedItems } = params;
 
@@ -78,24 +148,12 @@ export class MailService {
     console.log(`Flagged Items:`, flaggedItems);
     console.log(`======================================================\n`);
 
-    if (this.transporter) {
-      try {
-        await this.transporter.sendMail({
-          from: this.fromAddress,
-          to: studentEmail,
-          subject: 'Action Required: Admission Data Verification Correction',
-          text: `Dear ${studentName} (${admissionNumber}),\n\nThe college office has reviewed your profile and flagged mistakes requiring correction. Please log in to your student app to review and update.\n\nBaselios Poulose II Catholicose College`,
-          html,
-        });
-        console.log(`[MailService] Email successfully delivered to ${studentEmail}`);
-        return true;
-      } catch (err) {
-        console.error(`[MailService] Failed to send email to ${studentEmail}:`, err);
-        return false;
-      }
-    }
-
-    return true;
+    return this.dispatchEmail({
+      to: studentEmail,
+      subject: 'Action Required: Admission Data Verification Correction',
+      text: `Dear ${studentName} (${admissionNumber}),\n\nThe college office has reviewed your profile and flagged mistakes requiring correction. Please log in to your student app to review and update.\n\nBaselios Poulose II Catholicose College`,
+      html,
+    });
   }
 
   async sendPasswordResetOtp(params: { studentEmail: string; studentName: string; otp: string }): Promise<boolean> {
@@ -124,24 +182,12 @@ export class MailService {
     console.log(`[PASSWORD RESET OTP] To: ${studentEmail} | OTP: ${otp}`);
     console.log(`======================================================\n`);
 
-    if (this.transporter) {
-      try {
-        const info = await this.transporter.sendMail({
-          from: this.fromAddress,
-          to: studentEmail,
-          subject: `BPC College: ${otp} is your Password Reset Code`,
-          text: `Dear ${studentName},\n\nYour One-Time Password (OTP) for resetting your password on the BPC College Portal is: ${otp}\n\nThis verification code is valid for 10 minutes.\n\nBaselios Poulose II Catholicose College, Piravom`,
-          html,
-        });
-        console.log(`[MailService] Reset OTP successfully delivered to ${studentEmail} [MsgID: ${info.messageId}]`);
-        return true;
-      } catch (err) {
-        console.error(`[MailService] Failed to send OTP to ${studentEmail}:`, err);
-        return false;
-      }
-    }
-
-    return true;
+    return this.dispatchEmail({
+      to: studentEmail,
+      subject: `BPC College: ${otp} is your Password Reset Code`,
+      text: `Dear ${studentName},\n\nYour One-Time Password (OTP) for resetting your password on the BPC College Portal is: ${otp}\n\nThis verification code is valid for 10 minutes.\n\nBaselios Poulose II Catholicose College, Piravom`,
+      html,
+    });
   }
 }
 
