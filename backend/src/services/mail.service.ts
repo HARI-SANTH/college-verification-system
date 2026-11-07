@@ -19,15 +19,26 @@ export class MailService {
 
     this.fromAddress = process.env.SMTP_FROM || `Baselios Poulose II Catholicose College <${user}>`;
 
-    if (host && user && pass && pass !== 'college_smtp_password') {
+    if (user && pass && pass !== 'college_smtp_password') {
       try {
-        this.transporter = nodemailer.createTransport({
-          host,
-          port,
-          secure: port === 465,
-          auth: { user, pass },
-        });
-        console.log(`[MailService] Initialized SMTP connection to ${host}:${port}`);
+        if (user.endsWith('@gmail.com') || host.includes('gmail')) {
+          this.transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: { user, pass },
+            pool: true,
+            maxConnections: 3,
+            maxMessages: 100,
+          });
+          console.log(`[MailService] Initialized pooled Gmail SMTP transport for ${user}`);
+        } else {
+          this.transporter = nodemailer.createTransport({
+            host,
+            port,
+            secure: port === 465,
+            auth: { user, pass },
+          });
+          console.log(`[MailService] Initialized SMTP connection to ${host}:${port}`);
+        }
       } catch (err) {
         console.warn('[MailService] Failed to initialize SMTP transporter. Falling back to logger.', err);
       }

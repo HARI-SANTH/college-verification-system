@@ -248,11 +248,18 @@ router.post('/forgot-password', async (req, res) => {
             resetOtpStore.set(user.studentProfile.admissionNumber.toUpperCase(), payload);
         }
         const studentName = user.studentProfile?.firstName || 'Student';
-        // Dispatch email notification
-        await mail_service_1.mailService.sendPasswordResetOtp({
+        // Dispatch email notification asynchronously so mobile app transitions immediately without timeout
+        mail_service_1.mailService
+            .sendPasswordResetOtp({
             studentEmail: user.email,
             studentName,
             otp,
+        })
+            .then((ok) => {
+            console.log(`[Forgot Password] OTP email dispatch result for ${user.email}: ${ok}`);
+        })
+            .catch((err) => {
+            console.error(`[Forgot Password] Background OTP Mail Error for ${user.email}:`, err);
         });
         return res.json({
             message: `A 6-digit OTP has been sent to ${maskEmail(user.email)}`,
