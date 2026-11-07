@@ -56,20 +56,58 @@ export class MailService {
         console.log(`[MailService] Dispatching via Google Apps Script HTTPS webhook to ${to}...`);
         const res = await fetch(process.env.GMAIL_HTTP_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
+          },
+          redirect: 'follow',
           body: JSON.stringify({ to, subject, text, html }),
         });
         if (res.ok) {
           console.log(`[MailService] Successfully sent via Google HTTPS webhook to ${to}`);
           return true;
         }
-        console.warn(`[MailService] Google HTTPS webhook returned status ${res.status}`);
+        const errText = await res.text().catch(() => '');
+        console.warn(`[MailService] Google HTTPS webhook returned status ${res.status}: ${errText.slice(0, 300)}`);
       } catch (httpErr) {
         console.error(`[MailService] Google HTTPS webhook error:`, httpErr);
       }
     }
 
-    // 2. Resend HTTPS API (Port 443)
+    // 2. Brevo (Sendinblue) HTTPS API (Port 443 - 300 free emails/day, no domain verification required)
+    if (process.env.BREVO_API_KEY) {
+      try {
+        console.log(`[MailService] Dispatching via Brevo HTTPS API to ${to}...`);
+        const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          headers: {
+            'accept': 'application/json',
+            'api-key': process.env.BREVO_API_KEY,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            sender: {
+              name: 'Baselios Poulose II Catholicose College',
+              email: process.env.BREVO_SENDER_EMAIL || process.env.SMTP_USER || 'harisanths56@gmail.com',
+            },
+            to: [{ email: to }],
+            subject,
+            textContent: text,
+            htmlContent: html,
+          }),
+        });
+        if (res.ok) {
+          console.log(`[MailService] Successfully sent via Brevo HTTPS API to ${to}`);
+          return true;
+        }
+        const errText = await res.text().catch(() => '');
+        console.warn(`[MailService] Brevo HTTPS API returned status ${res.status}: ${errText.slice(0, 300)}`);
+      } catch (brevoErr) {
+        console.error(`[MailService] Brevo HTTPS API error:`, brevoErr);
+      }
+    }
+
+    // 3. Resend HTTPS API (Port 443)
     if (process.env.RESEND_API_KEY) {
       try {
         console.log(`[MailService] Dispatching via Resend HTTPS API to ${to}...`);
