@@ -21,7 +21,7 @@ class CollegeApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'College Data & Verification',
+      title: 'BPC app',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
