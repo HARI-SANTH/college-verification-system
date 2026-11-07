@@ -64,18 +64,26 @@ if (supabaseUrl && supabaseKey) {
 }
 
 export const uploadFileToCloud = async (filePath: string, originalName: string, mimeType: string): Promise<string> => {
+  const ext = (path.extname(originalName) || path.extname(filePath)).toLowerCase();
+  let resolvedMime = mimeType;
+  if (!resolvedMime || resolvedMime === 'application/octet-stream') {
+    if (ext === '.pdf') resolvedMime = 'application/pdf';
+    else if (['.jpg', '.jpeg'].includes(ext)) resolvedMime = 'image/jpeg';
+    else if (ext === '.png') resolvedMime = 'image/png';
+    else if (ext === '.webp') resolvedMime = 'image/webp';
+  }
+
   if (supabaseClient) {
     try {
       const fileBuffer = fs.readFileSync(filePath);
-      const ext = path.extname(originalName) || path.extname(filePath);
       const uniqueFileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-      const folder = mimeType.startsWith('image/') ? 'photos' : 'certificates';
+      const folder = resolvedMime.startsWith('image/') ? 'photos' : 'certificates';
       const storagePath = `${folder}/${uniqueFileName}`;
 
       const { data, error } = await supabaseClient.storage
         .from(bucketName)
         .upload(storagePath, fileBuffer, {
-          contentType: mimeType,
+          contentType: resolvedMime,
           upsert: true,
         });
 

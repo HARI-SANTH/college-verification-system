@@ -14,7 +14,12 @@ const JWT_SECRET = process.env.JWT_SECRET || 'college_super_secret_jwt_key_2026_
 
 export const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  let token = authHeader && authHeader.split(' ')[1];
+
+  // Also support query param token for media/iframe streaming
+  if (!token && req.query.token) {
+    token = String(req.query.token);
+  }
 
   if (!token) {
     return res.status(401).json({ error: 'Access token required' });

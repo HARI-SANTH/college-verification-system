@@ -201,6 +201,16 @@ export const VerificationWorkbench: React.FC<Props> = ({
     return `/${url}`;
   };
 
+  // Helper to resolve inline document preview stream URL with auth token (prevents browser download prompt)
+  const getDocPreviewUrl = (doc?: StudentDocument | null) => {
+    if (!doc) return '';
+    const token = localStorage.getItem('token') || '';
+    if (doc.id) {
+      return `/api/admin/documents/${doc.id}/preview?token=${encodeURIComponent(token)}`;
+    }
+    return resolveFileUrl(doc.fileUrl);
+  };
+
   // Helper to format file size
   const formatFileSize = (bytes?: number) => {
     if (!bytes) return 'Unknown size';
@@ -1113,7 +1123,7 @@ export const VerificationWorkbench: React.FC<Props> = ({
                 {activeDoc && (
                   <>
                     <a
-                      href={resolveFileUrl(activeDoc.fileUrl)}
+                      href={getDocPreviewUrl(activeDoc)}
                       target="_blank"
                       rel="noreferrer"
                       className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] flex items-center gap-1 transition-colors"
@@ -1241,7 +1251,7 @@ export const VerificationWorkbench: React.FC<Props> = ({
                     activeSpec.type === 'PROFILE_PHOTO' ? (
                       <div className="w-full h-full overflow-hidden flex items-center justify-center p-4">
                         <img
-                          src={resolveFileUrl(activeDoc.fileUrl)}
+                          src={getDocPreviewUrl(activeDoc)}
                           alt={activeDoc.fileName}
                           style={{
                             transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel / 100}) rotate(${rotation}deg)`,
@@ -1253,13 +1263,19 @@ export const VerificationWorkbench: React.FC<Props> = ({
                         />
                       </div>
                     ) : (
-                      // PDF Viewer with FitH mode
-                      <div className="w-full h-full flex flex-col">
-                        <iframe
-                          src={`${resolveFileUrl(activeDoc.fileUrl)}#view=FitH&toolbar=1&navpanes=0`}
+                      // Native Inline PDF Object & Frame Viewer with Zero Download Prompt
+                      <div className="w-full h-full flex flex-col bg-slate-100">
+                        <object
+                          data={`${getDocPreviewUrl(activeDoc)}#view=FitH&toolbar=1&navpanes=0`}
+                          type="application/pdf"
                           className="w-full h-full border-0"
-                          title={activeDoc.fileName}
-                        />
+                        >
+                          <iframe
+                            src={`${getDocPreviewUrl(activeDoc)}#view=FitH&toolbar=1&navpanes=0`}
+                            className="w-full h-full border-0"
+                            title={activeDoc.fileName}
+                          />
+                        </object>
                       </div>
                     )}
                   </div>

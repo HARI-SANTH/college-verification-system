@@ -21,4 +21,5 @@ uploads/
 *.png
 *.exe
 *.apk
+*.traineddata
 cloudflared.exe

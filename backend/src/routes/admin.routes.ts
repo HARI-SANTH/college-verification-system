@@ -400,6 +400,61 @@ router.post('/students/:id/ai-verify', async (req: Request, res: Response) => {
   }
 });
 
+// 4c. Inline Document Preview Streaming (Prevents forced downloads in browser)
+router.get('/documents/:id/preview', async (req: Request, res: Response) => {
+  try {
+    const docId = String(req.params.id);
+    const document = await prisma.studentDocument.findUnique({
+      where: { id: docId },
+    });
+
+    if (!document) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    const ext = path.extname(document.fileName || document.fileUrl || '').toLowerCase();
+    const isPdf = ext === '.pdf' || document.fileMimeType === 'application/pdf';
+    const isPng = ext === '.png' || document.fileMimeType === 'image/png';
+    const isJpg = ext === '.jpg' || ext === '.jpeg' || document.fileMimeType === 'image/jpeg';
+    const isWebp = ext === '.webp' || document.fileMimeType === 'image/webp';
+
+    const contentType = isPdf
+      ? 'application/pdf'
+      : isPng
+      ? 'image/png'
+      : isJpg
+      ? 'image/jpeg'
+      : isWebp
+      ? 'image/webp'
+      : 'application/pdf';
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(document.fileName || 'document.pdf')}"`);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.removeHeader('X-Frame-Options');
+
+    // 1. Check if local file exists on disk
+    if (document.filePath && fs.existsSync(document.filePath)) {
+      return fs.createReadStream(document.filePath).pipe(res);
+    }
+
+    // 2. Fetch from remote cloud storage (Supabase or external URL)
+    if (document.fileUrl && (document.fileUrl.startsWith('http://') || document.fileUrl.startsWith('https://'))) {
+      const response = await fetch(document.fileUrl);
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to retrieve document from cloud storage' });
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      return res.send(buffer);
+    }
+
+    return res.status(404).json({ error: 'Document file content unavailable' });
+  } catch (err) {
+    console.error('[Document Preview Stream Error]', err);
+    return res.status(500).json({ error: 'Failed to stream document preview' });
+  }
+});
+
 // 5. Export to Excel
 router.get('/export/excel', async (req: Request, res: Response) => {
   try {
