@@ -45,7 +45,7 @@ export const Navbar: React.FC<Props> = ({ auth, onLogout, onQuickLogin }) => {
           />
           <div>
             <h1 className="text-sm font-extrabold tracking-tight uppercase text-white">
-              BASELIOS PAULOSE II CATHOLICOSE COLLEGE
+              BASELIOS POULOSE II CATHOLICOSE COLLEGE
             </h1>
             <p className="text-[10px] text-blue-300 tracking-wider">
               Piravom • Student Records & Admission Verification Portal

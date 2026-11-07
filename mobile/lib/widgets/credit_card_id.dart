@@ -138,7 +138,7 @@ class _CreditCardIDWidgetState extends State<CreditCardIDWidget> {
                                   ),
                                 ),
                                 Text(
-                                  'Baselios Paulose II Catholicose College',
+                                  'Baselios Poulose II Catholicose College',
                                   style: TextStyle(color: Colors.white70, fontSize: 8, fontWeight: FontWeight.w500),
                                 ),
                               ],

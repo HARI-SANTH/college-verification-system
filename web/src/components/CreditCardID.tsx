@@ -77,7 +77,7 @@ export const CreditCardID: React.FC<Props> = ({ profile }) => {
                 />
                 <div>
                   <h3 className="text-xs font-extrabold tracking-wider uppercase text-blue-200 leading-tight">
-                    BASELIOS PAULOSE II CATHOLICOSE COLLEGE
+                    BASELIOS POULOSE II CATHOLICOSE COLLEGE
                   </h3>
                   <p className="text-[10px] text-slate-400 font-medium tracking-widest uppercase">
                     Piravom • Digital Student ID

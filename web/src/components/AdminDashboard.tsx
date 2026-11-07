@@ -85,7 +85,7 @@ export const AdminDashboard: React.FC<Props> = ({
           <div className="h-96 flex items-center justify-center text-xs font-mono text-slate-500">
             <div className="flex items-center gap-3">
               <div className="w-5 h-5 border-2 border-[#00236f] border-t-transparent rounded-full animate-spin" />
-              Loading Baselios Paulose II Catholicose College Verification Desk...
+              Loading Baselios Poulose II Catholicose College Verification Desk...
             </div>
           </div>
         ) : (

@@ -66,7 +66,7 @@ export const AdminHeader: React.FC<Props> = ({
             />
             <div className="flex flex-col">
               <span className="text-sm font-black text-[#00236f] leading-tight tracking-tight uppercase">
-                BASELIOS PAULOSE II CATHOLICOSE COLLEGE
+                BASELIOS POULOSE II CATHOLICOSE COLLEGE
               </span>
               <div className="text-xs text-slate-500 flex items-center gap-1.5 font-medium">
                 <span>Piravom • Office Administration & Verification Desk</span>

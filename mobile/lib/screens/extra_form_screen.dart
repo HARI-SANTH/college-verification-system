@@ -563,7 +563,7 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
               style: TextStyle(color: Color(0xFF0F172A), fontSize: 15, fontWeight: FontWeight.w800),
             ),
             Text(
-              'BASELIOS PAULOSE II CATHOLICOSE COLLEGE • AY 2024–28',
+              'BASELIOS POULOSE II CATHOLICOSE COLLEGE • AY 2024–28',
               style: TextStyle(color: Color(0xFF64748B), fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.3),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

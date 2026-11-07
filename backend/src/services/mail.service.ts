@@ -89,7 +89,7 @@ export class MailService {
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
         <div style="text-align: center; margin-bottom: 20px;">
-          <h2 style="color: #1e3a8a; margin: 0;">Baselios Paulose II Catholicose College</h2>
+          <h2 style="color: #1e3a8a; margin: 0;">Baselios Poulose II Catholicose College</h2>
           <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">Student Portal - Password Recovery</p>
         </div>
         <p>Dear <strong>${studentName}</strong>,</p>
@@ -100,7 +100,7 @@ export class MailService {
         </div>
         <p style="color: #475569; font-size: 13px;">If you did not request a password reset, please ignore this email or notify the college admissions cell.</p>
         <div style="border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 12px; text-align: center; color: #94a3b8; font-size: 11px;">
-          © ${new Date().getFullYear()} Baselios Paulose II Catholicose College, Piravom
+          © ${new Date().getFullYear()} Baselios Poulose II Catholicose College, Piravom
         </div>
       </div>
     `;

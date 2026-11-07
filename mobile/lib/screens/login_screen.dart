@@ -245,7 +245,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 10),
                 const Text(
-                  'BASELIOS PAULOSE II\nCATHOLICOSE COLLEGE',
+                  'BASELIOS POULOSE II\nCATHOLICOSE COLLEGE',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Color(0xFF00236F),

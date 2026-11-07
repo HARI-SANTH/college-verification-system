@@ -85,7 +85,7 @@ export const AuthModal: React.FC<Props> = ({ onAuthSuccess, onQuickDemoLogin }) 
             />
           </div>
           <h2 className="text-xl font-black uppercase tracking-tight text-white">
-            BASELIOS PAULOSE II CATHOLICOSE COLLEGE
+            BASELIOS POULOSE II CATHOLICOSE COLLEGE
           </h2>
           <p className="text-xs text-blue-200 mt-1">
             Piravom • Student Admissions, ID Generation & Office Verification Portal

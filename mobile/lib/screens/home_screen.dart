@@ -86,7 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: const [
                   Text(
-                    'BASELIOS PAULOSE II CATHOLICOSE COLLEGE',
+                    'BASELIOS POULOSE II CATHOLICOSE COLLEGE',
                     style: TextStyle(
                       color: Color(0xFF1E3A8A),
                       fontSize: 10,

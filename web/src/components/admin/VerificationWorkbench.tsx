@@ -683,7 +683,7 @@ export const VerificationWorkbench: React.FC<Props> = ({
               </span>
               <span className="text-slate-300 hidden xl:inline">•</span>
               <span className="text-xs text-slate-400 hidden xl:inline">
-                BASELIOS PAULOSE II CATHOLICOSE COLLEGE • Piravom
+                BASELIOS POULOSE II CATHOLICOSE COLLEGE • Piravom
               </span>
             </div>
           ) : (
