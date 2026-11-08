@@ -52,6 +52,16 @@ interface DocSpec {
 
 const DOCUMENT_SPECS: DocSpec[] = [
   {
+    type: 'SSLC_CERTIFICATE',
+    aliases: ['SSLC_CERT'],
+    label: 'SSLC 10th',
+    fullName: 'SSLC / 10th Class Certificate',
+    category: 'Identity',
+    icon: 'school',
+    description: 'Primary legal baseline for Date of Birth, Candidate Full Name, Gender, Nationality, Father\'s Name, Mother\'s Name, and Permanent Residential Address.',
+    isRequired: true,
+  },
+  {
     type: 'PLUS_TWO_CERTIFICATE',
     aliases: ['PLUS_TWO_CERT'],
     label: '+2 HSE Marksheet',
@@ -62,14 +72,14 @@ const DOCUMENT_SPECS: DocSpec[] = [
     isRequired: true,
   },
   {
-    type: 'SSLC_CERTIFICATE',
-    aliases: ['SSLC_CERT'],
-    label: 'SSLC 10th',
-    fullName: 'SSLC / 10th Class Certificate',
+    type: 'AADHAAR_CARD',
+    aliases: ['AADHAAR_DOCUMENT', 'aadhaar'],
+    label: 'Aadhaar Card',
+    fullName: 'Government Aadhaar Card (UIDAI)',
     category: 'Identity',
-    icon: 'school',
-    description: 'Primary legal baseline for Date of Birth, Candidate Full Name, Gender, Nationality, Father\'s Name, Mother\'s Name, and Permanent Residential Address.',
-    isRequired: true,
+    icon: 'credit_card',
+    description: 'Official 12-digit UIDAI Aadhaar identity document or e-Aadhaar PDF proof.',
+    isRequired: false,
   },
   {
     type: 'ALLOTMENT_MEMO',
@@ -132,16 +142,6 @@ const DOCUMENT_SPECS: DocSpec[] = [
     isRequired: false,
   },
   {
-    type: 'AADHAAR_CARD',
-    aliases: ['AADHAAR_DOCUMENT', 'aadhaar'],
-    label: 'Aadhaar Card',
-    fullName: 'Government Aadhaar Card (UIDAI)',
-    category: 'Identity',
-    icon: 'credit_card',
-    description: 'Official 12-digit UIDAI Aadhaar identity document or e-Aadhaar PDF proof.',
-    isRequired: false,
-  },
-  {
     type: 'PROFILE_PHOTO',
     aliases: ['photoUrl', 'photo'],
     label: 'Profile Photo',
@@ -194,6 +194,7 @@ export const VerificationWorkbench: React.FC<Props> = ({
   const [actionMessage, setActionMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   const viewerContainerRef = useRef<HTMLDivElement>(null);
+  const docTabsRef = useRef<HTMLDivElement>(null);
 
   // Helper to find document for a given spec
   const findDocForSpec = (spec: DocSpec, docs?: StudentDocument[]): StudentDocument | undefined => {
@@ -1007,9 +1008,27 @@ export const VerificationWorkbench: React.FC<Props> = ({
                 : 'w-full md:w-1/2'
             }`}
           >
-            {/* Document Tabs Bar */}
-            <div className="bg-white px-2 pt-1 flex items-center justify-between border-b border-slate-200 shrink-0">
-              <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
+            {/* Document Tabs Bar with Carousel Navigation */}
+            <div className="bg-white px-1 pt-1 flex items-center justify-between border-b border-slate-200 shrink-0 min-w-0">
+              <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden relative">
+                <button
+                  type="button"
+                  onClick={() => docTabsRef.current?.scrollBy({ left: -220, behavior: 'smooth' })}
+                  className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0"
+                  title="Scroll Tabs Left"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+
+                <div
+                  ref={docTabsRef}
+                  onWheel={(e) => {
+                    if (e.deltaY !== 0 && docTabsRef.current) {
+                      docTabsRef.current.scrollLeft += e.deltaY;
+                    }
+                  }}
+                  className="flex items-center gap-1 overflow-x-auto scrollbar-none scroll-smooth flex-1"
+                >
                 {visibleDocSpecs.map((spec) => {
                   const isSelectedTab = activeDocSpecType === spec.type;
                   const uploadedDoc = findDocForSpec(spec, selectedStudent?.documents);
@@ -1083,6 +1102,16 @@ export const VerificationWorkbench: React.FC<Props> = ({
                     </button>
                   );
                 })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => docTabsRef.current?.scrollBy({ left: 220, behavior: 'smooth' })}
+                  className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0"
+                  title="Scroll Tabs Right"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
 
               {/* Layout Mode Toggles (Wide / Equal / Fullscreen) */}
@@ -1530,6 +1559,20 @@ export const VerificationWorkbench: React.FC<Props> = ({
                     )}
                   </div>
 
+                  {/* National Identity: Aadhaar (UIDAI) & APAAR ID */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {renderFieldRow(
+                      'Aadhaar Number (UIDAI)',
+                      'aadhaarNumber',
+                      selectedStudent?.aadhaarNumber || 'Not Provided'
+                    )}
+                    {renderFieldRow(
+                      'APAAR / ABC ID',
+                      'apaarId',
+                      selectedStudent?.apaarId || 'Not Provided'
+                    )}
+                  </div>
+
                   {/* Father's Name & Father's Occupation */}
                   <div className="grid grid-cols-2 gap-2">
                     {renderFieldRow(
@@ -1618,20 +1661,6 @@ export const VerificationWorkbench: React.FC<Props> = ({
                       'Caste / Category',
                       'caste',
                       selectedStudent?.caste || 'General / Open'
-                    )}
-                  </div>
-
-                  {/* Aadhaar (UIDAI) & APAAR ID */}
-                  <div className="grid grid-cols-2 gap-2">
-                    {renderFieldRow(
-                      'Aadhaar Number (UIDAI)',
-                      'aadhaarNumber',
-                      selectedStudent?.aadhaarNumber || 'Not Provided'
-                    )}
-                    {renderFieldRow(
-                      'APAAR / ABC ID',
-                      'apaarId',
-                      selectedStudent?.apaarId || 'Not Provided'
                     )}
                   </div>
                 </div>
