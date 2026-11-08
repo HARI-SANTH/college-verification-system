@@ -69,6 +69,7 @@ class StudentProfile {
   final String? bankAccountNumber;
   final String? bankIfscCode;
   final String? apaarId;
+  final String? aadhaarNumber;
   final String verificationStatus;
   final Map<String, dynamic> fieldFlags;
   final String? photoUrl;
@@ -114,6 +115,7 @@ class StudentProfile {
     this.bankAccountNumber,
     this.bankIfscCode,
     this.apaarId,
+    this.aadhaarNumber,
     required this.verificationStatus,
     required this.fieldFlags,
     this.photoUrl,
@@ -186,6 +188,7 @@ class StudentProfile {
       bankAccountNumber: json['bankAccountNumber'],
       bankIfscCode: json['bankIfscCode'],
       apaarId: json['apaarId'],
+      aadhaarNumber: json['aadhaarNumber'],
       verificationStatus: json['verificationStatus'] ?? 'DRAFT',
       fieldFlags: parsedFlags,
       photoUrl: photo ?? json['photoUrl'],

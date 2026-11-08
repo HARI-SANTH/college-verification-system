@@ -43,8 +43,12 @@ export const StudentForm: React.FC<Props> = ({ profile, onProfileUpdated, onBack
     annualIncome: profile.annualIncome ? String(profile.annualIncome) : '',
     isEws: profile.isEws || false,
 
-    parentName: profile.parentName || '',
-    parentOccupation: profile.parentOccupation || '',
+    parentName: profile.parentName || profile.fatherName || '',
+    parentOccupation: profile.parentOccupation || profile.fatherOccupation || '',
+    fatherName: profile.fatherName || profile.parentName || '',
+    fatherOccupation: profile.fatherOccupation || profile.parentOccupation || '',
+    motherName: profile.motherName || '',
+    motherOccupation: profile.motherOccupation || '',
     guardianName: profile.guardianName || '',
     guardianOccupation: profile.guardianOccupation || '',
 
@@ -62,6 +66,7 @@ export const StudentForm: React.FC<Props> = ({ profile, onProfileUpdated, onBack
     prevPercentage: profile.prevPercentage ? String(profile.prevPercentage) : '',
 
     apaarId: profile.apaarId || '',
+    aadhaarNumber: profile.aadhaarNumber || '',
   });
 
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
@@ -101,8 +106,11 @@ export const StudentForm: React.FC<Props> = ({ profile, onProfileUpdated, onBack
     COMMUNITY_CERT: ['COMMUNITY_CERTIFICATE'],
     CASTE_CERTIFICATE: ['CASTE_CERT'],
     CASTE_CERT: ['CASTE_CERTIFICATE'],
-    APAAR_DOCUMENT: ['APAAR_CARD'],
-    APAAR_CARD: ['APAAR_DOCUMENT'],
+    APAAR_DOCUMENT: ['APAAR_CARD', 'apaarId'],
+    APAAR_CARD: ['APAAR_DOCUMENT', 'apaarId'],
+    AADHAAR_CARD: ['AADHAAR_DOCUMENT', 'aadhaarNumber', 'aadhaar'],
+    AADHAAR_DOCUMENT: ['AADHAAR_CARD', 'aadhaarNumber', 'aadhaar'],
+    aadhaarNumber: ['AADHAAR_CARD', 'AADHAAR_DOCUMENT', 'aadhaar'],
     PROFILE_PHOTO: ['photoUrl', 'photo'],
     photoUrl: ['PROFILE_PHOTO'],
   };
@@ -144,6 +152,8 @@ export const StudentForm: React.FC<Props> = ({ profile, onProfileUpdated, onBack
     try {
       const payload: any = {
         ...formData,
+        parentName: formData.fatherName || formData.motherName || formData.parentName,
+        parentOccupation: formData.fatherOccupation || formData.motherOccupation || formData.parentOccupation,
         annualIncome: formData.annualIncome ? parseFloat(formData.annualIncome) : null,
         prevPercentage: formData.prevPercentage ? parseFloat(formData.prevPercentage) : null,
         isFinalSubmission: isFinal,
@@ -724,6 +734,20 @@ export const StudentForm: React.FC<Props> = ({ profile, onProfileUpdated, onBack
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono"
               />
             </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                Aadhaar Number (UIDAI)
+              </label>
+              <input
+                type="text"
+                disabled={isFieldDisabled('aadhaarNumber')}
+                placeholder="12-digit Aadhaar Number (e.g. 5226 9061 0484)"
+                value={formData.aadhaarNumber}
+                onChange={(e) => setFormData({ ...formData, aadhaarNumber: e.target.value })}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono"
+              />
+            </div>
           </div>
         </div>
 
@@ -736,26 +760,96 @@ export const StudentForm: React.FC<Props> = ({ profile, onProfileUpdated, onBack
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Parent Name
+                Father's Name
               </label>
               <input
                 type="text"
-                disabled={isFieldDisabled('parentName')}
-                value={formData.parentName}
-                onChange={(e) => setFormData({ ...formData, parentName: e.target.value })}
+                disabled={isFieldDisabled('fatherName')}
+                placeholder="Father's Full Name"
+                value={formData.fatherName}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    fatherName: e.target.value,
+                    parentName: e.target.value || formData.parentName,
+                  })
+                }
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
               />
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Parent Occupation
+                Father's Occupation
               </label>
               <input
                 type="text"
-                disabled={isFieldDisabled('parentOccupation')}
-                value={formData.parentOccupation}
-                onChange={(e) => setFormData({ ...formData, parentOccupation: e.target.value })}
+                disabled={isFieldDisabled('fatherOccupation')}
+                placeholder="Father's Occupation"
+                value={formData.fatherOccupation}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    fatherOccupation: e.target.value,
+                    parentOccupation: e.target.value || formData.parentOccupation,
+                  })
+                }
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                Mother's Name
+              </label>
+              <input
+                type="text"
+                disabled={isFieldDisabled('motherName')}
+                placeholder="Mother's Full Name"
+                value={formData.motherName}
+                onChange={(e) => setFormData({ ...formData, motherName: e.target.value })}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                Mother's Occupation
+              </label>
+              <input
+                type="text"
+                disabled={isFieldDisabled('motherOccupation')}
+                placeholder="Mother's Occupation"
+                value={formData.motherOccupation}
+                onChange={(e) => setFormData({ ...formData, motherOccupation: e.target.value })}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                Guardian's Name (if applicable)
+              </label>
+              <input
+                type="text"
+                disabled={isFieldDisabled('guardianName')}
+                placeholder="Guardian's Full Name"
+                value={formData.guardianName}
+                onChange={(e) => setFormData({ ...formData, guardianName: e.target.value })}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                Guardian's Occupation
+              </label>
+              <input
+                type="text"
+                disabled={isFieldDisabled('guardianOccupation')}
+                placeholder="Guardian's Occupation"
+                value={formData.guardianOccupation}
+                onChange={(e) => setFormData({ ...formData, guardianOccupation: e.target.value })}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
               />
             </div>
@@ -772,13 +866,14 @@ export const StudentForm: React.FC<Props> = ({ profile, onProfileUpdated, onBack
             {[
               { type: 'PLUS_TWO_CERTIFICATE', label: 'Plus Two (+2) Marksheet / Certificate' },
               { type: 'SSLC_CERTIFICATE', label: '10th / SSLC Certificate' },
+              { type: 'AADHAAR_CARD', label: 'Aadhaar Card / e-Aadhaar Letter' },
               { type: 'ALLOTMENT_MEMO', label: 'College Allotment Memo' },
               { type: 'CASTE_CERTIFICATE', label: 'Caste Certificate (if applicable)' },
               { type: 'INCOME_CERTIFICATE', label: 'Income Certificate (for EWS / Scholarships)' },
               {
                 type: 'COMMUNITY_CERTIFICATE',
-                label: 'Community Certificate (Required for Management Quota)',
-                requiredQuota: 'Management',
+                label: 'Community Certificate (Required for Community Quota)',
+                requiredQuota: 'Community',
               },
               { type: 'BANK_PASSBOOK', label: 'Bank Passbook Front Page (with IFSC & A/C No)' },
               { type: 'APAAR_DOCUMENT', label: 'APAAR / ABC Card PDF' },

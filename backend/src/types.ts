@@ -21,6 +21,7 @@ export enum DocumentType {
   COMMUNITY_CERTIFICATE = 'COMMUNITY_CERTIFICATE',
   BANK_PASSBOOK = 'BANK_PASSBOOK',
   APAAR_DOCUMENT = 'APAAR_DOCUMENT',
+  AADHAAR_CARD = 'AADHAAR_CARD',
 }
 
 export interface FieldFlagDetail {

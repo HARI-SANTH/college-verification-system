@@ -1,4 +1,7 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../api_service.dart';
 import 'home_screen.dart';
 
@@ -22,6 +25,12 @@ class _LoginScreenState extends State<LoginScreen> {
   // Form Keys
   final _loginFormKey = GlobalKey<FormState>();
   final _signupFormKey = GlobalKey<FormState>();
+
+  // Sign Up Photo State
+  Uint8List? _signupPhotoBytes;
+  String? _signupPhotoName;
+  String? _photoError;
+  final ImagePicker _imagePicker = ImagePicker();
 
   // Login Controllers
   final _loginIdentifierCtrl = TextEditingController();
@@ -171,8 +180,129 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _pickPhoto(ImageSource source) async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 85,
+      );
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        setState(() {
+          _signupPhotoBytes = bytes;
+          _signupPhotoName = image.name.isNotEmpty ? image.name : 'passport_${DateTime.now().millisecondsSinceEpoch}.jpg';
+          _photoError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error selecting photo: $e'),
+            backgroundColor: const Color(0xFFEF4444),
+          ),
+        );
+      }
+    }
+  }
+
+  void _showPhotoOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Upload Passport Size Photo',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A)),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'This photo will be displayed directly on your official Student Digital ID Card.',
+                style: TextStyle(color: Color(0xFF64748B), fontSize: 11),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.camera_alt_outlined, color: Color(0xFF00236F)),
+                ),
+                title: const Text('Capture with Camera', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                subtitle: const Text('Take a clear passport photograph', style: TextStyle(fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickPhoto(ImageSource.camera);
+                },
+              ),
+              const Divider(height: 1),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.photo_library_outlined, color: Color(0xFF15803D)),
+                ),
+                title: const Text('Choose from Gallery', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                subtitle: const Text('Select a saved passport photo from device', style: TextStyle(fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickPhoto(ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleRegister() async {
-    if (!_signupFormKey.currentState!.validate()) return;
+    // 1. Photo validation
+    if (_signupPhotoBytes == null) {
+      setState(() {
+        _photoError = 'Passport photo is required for your Student ID Card';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please upload a passport size photo for your student ID card.'),
+          backgroundColor: Color(0xFFEF4444),
+        ),
+      );
+      return;
+    } else {
+      setState(() => _photoError = null);
+    }
+
+    // 2. Validate all form fields
+    if (!_signupFormKey.currentState!.validate()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please correct the highlighted format errors before submitting.'),
+          backgroundColor: Color(0xFFEF4444),
+        ),
+      );
+      return;
+    }
 
     FocusScope.of(context).unfocus();
     setState(() {
@@ -181,7 +311,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final profile = await ApiService.register({
+      final payload = {
         'firstName': _firstNameCtrl.text.trim(),
         'lastName': _lastNameCtrl.text.trim(),
         'admissionNumber': _admNoCtrl.text.trim().toUpperCase(),
@@ -191,7 +321,26 @@ class _LoginScreenState extends State<LoginScreen> {
         'bloodGroup': _bloodGroup,
         'timePeriodOfStudy': _timePeriod,
         'password': _signupPasswordCtrl.text,
-      });
+        if (_signupPhotoBytes != null) ...{
+          'photoBase64': base64Encode(_signupPhotoBytes!),
+          'photoFileName': _signupPhotoName ?? 'profile_photo_${_admNoCtrl.text.trim().toUpperCase()}.jpg',
+        },
+      };
+
+      final profile = await ApiService.register(payload);
+
+      // Verify photoUrl is present; if not, upload via document upload fallback
+      var finalProfile = profile;
+      if ((finalProfile.photoUrl == null || finalProfile.photoUrl!.isEmpty) && _signupPhotoBytes != null) {
+        try {
+          await ApiService.uploadDocument(
+            type: 'PROFILE_PHOTO',
+            fileName: _signupPhotoName ?? 'profile_photo_${profile.admissionNumber}.jpg',
+            bytes: _signupPhotoBytes!,
+          );
+          finalProfile = await ApiService.getProfile();
+        } catch (_) {}
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -202,7 +351,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => HomeScreen(initialProfile: profile)),
+        MaterialPageRoute(builder: (_) => HomeScreen(initialProfile: finalProfile)),
       );
     } catch (e) {
       setState(() {
@@ -509,15 +658,142 @@ class _LoginScreenState extends State<LoginScreen> {
                       if (_isSignUp)
                         Form(
                           key: _signupFormKey,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // 1. Passport Size Photo Upload Tile
+                              Center(
+                                child: Column(
+                                  children: [
+                                    Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        GestureDetector(
+                                          onTap: _showPhotoOptions,
+                                          child: AnimatedContainer(
+                                            duration: const Duration(milliseconds: 250),
+                                            width: 88,
+                                            height: 108,
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFF1F5F9),
+                                              borderRadius: BorderRadius.circular(14),
+                                              border: Border.all(
+                                                color: _photoError != null
+                                                    ? const Color(0xFFEF4444)
+                                                    : _signupPhotoBytes != null
+                                                        ? const Color(0xFF0D9488)
+                                                        : const Color(0xFFCBD5E1),
+                                                width: _photoError != null || _signupPhotoBytes != null ? 2 : 1.2,
+                                              ),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: _photoError != null
+                                                      ? const Color(0xFFEF4444).withValues(alpha: 0.15)
+                                                      : Colors.black.withValues(alpha: 0.05),
+                                                  blurRadius: 8,
+                                                  offset: const Offset(0, 3),
+                                                ),
+                                              ],
+                                            ),
+                                            child: _signupPhotoBytes != null
+                                                ? ClipRRect(
+                                                    borderRadius: BorderRadius.circular(12),
+                                                    child: Image.memory(
+                                                      _signupPhotoBytes!,
+                                                      fit: BoxFit.cover,
+                                                      width: 88,
+                                                      height: 108,
+                                                    ),
+                                                  )
+                                                : Column(
+                                                    mainAxisAlignment: MainAxisAlignment.center,
+                                                    children: const [
+                                                      Icon(Icons.add_a_photo_outlined, color: Color(0xFF00236F), size: 28),
+                                                      SizedBox(height: 6),
+                                                      Text(
+                                                        'Passport\nPhoto',
+                                                        textAlign: TextAlign.center,
+                                                        style: TextStyle(
+                                                          color: Color(0xFF00236F),
+                                                          fontSize: 10,
+                                                          fontWeight: FontWeight.w700,
+                                                          height: 1.15,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                          ),
+                                        ),
+                                        Positioned(
+                                          bottom: -4,
+                                          right: -4,
+                                          child: GestureDetector(
+                                            onTap: _showPhotoOptions,
+                                            child: Container(
+                                              width: 28,
+                                              height: 28,
+                                              decoration: BoxDecoration(
+                                                color: _signupPhotoBytes != null ? const Color(0xFF0D9488) : const Color(0xFF00236F),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(color: Colors.white, width: 2),
+                                                boxShadow: [
+                                                  BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 4),
+                                                ],
+                                              ),
+                                              child: Icon(
+                                                _signupPhotoBytes != null ? Icons.check : Icons.camera_alt,
+                                                color: Colors.white,
+                                                size: 13,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    GestureDetector(
+                                      onTap: _showPhotoOptions,
+                                      child: Text(
+                                        _signupPhotoBytes != null ? 'Change Passport Photo' : 'Upload Passport Photo *',
+                                        style: TextStyle(
+                                          color: _photoError != null
+                                              ? const Color(0xFFEF4444)
+                                              : _signupPhotoBytes != null
+                                                  ? const Color(0xFF0D9488)
+                                                  : const Color(0xFF00236F),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    if (_photoError != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          _photoError!,
+                                          style: const TextStyle(color: Color(0xFFEF4444), fontSize: 10.5, fontWeight: FontWeight.w600),
+                                        ),
+                                      ),
+                                    const SizedBox(height: 4),
+                                    const Text(
+                                      'Displayed on your official Student Digital ID Card',
+                                      style: TextStyle(color: Color(0xFF64748B), fontSize: 10),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+
+                              // Name Fields
                               Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Expanded(
                                     child: TextFormField(
                                       controller: _firstNameCtrl,
                                       textInputAction: TextInputAction.next,
+                                      onChanged: (_) => setState(() {}),
                                       style: const TextStyle(color: Color(0xFF0F172A), fontSize: 12),
                                       decoration: InputDecoration(
                                         labelText: 'First Name',
@@ -529,8 +805,17 @@ class _LoginScreenState extends State<LoginScreen> {
                                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
                                         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
                                         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF00236F), width: 1.5)),
+                                        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.2)),
+                                        focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5)),
+                                        errorMaxLines: 2,
+                                        errorStyle: const TextStyle(color: Color(0xFFEF4444), fontSize: 10, fontWeight: FontWeight.w600, height: 1.2),
                                       ),
-                                      validator: (val) => val == null || val.trim().isEmpty ? 'Required' : null,
+                                      validator: (val) {
+                                        if (val == null || val.trim().isEmpty) return 'Required';
+                                        if (val.trim().length < 2) return 'Min 2 chars';
+                                        if (!RegExp(r"^[a-zA-Z\s\.]+$").hasMatch(val.trim())) return 'Letters only';
+                                        return null;
+                                      },
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -538,6 +823,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     child: TextFormField(
                                       controller: _lastNameCtrl,
                                       textInputAction: TextInputAction.next,
+                                      onChanged: (_) => setState(() {}),
                                       style: const TextStyle(color: Color(0xFF0F172A), fontSize: 12),
                                       decoration: InputDecoration(
                                         labelText: 'Last Name',
@@ -549,17 +835,28 @@ class _LoginScreenState extends State<LoginScreen> {
                                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
                                         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
                                         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF00236F), width: 1.5)),
+                                        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.2)),
+                                        focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5)),
+                                        errorMaxLines: 2,
+                                        errorStyle: const TextStyle(color: Color(0xFFEF4444), fontSize: 10, fontWeight: FontWeight.w600, height: 1.2),
                                       ),
-                                      validator: (val) => val == null || val.trim().isEmpty ? 'Required' : null,
+                                      validator: (val) {
+                                        if (val == null || val.trim().isEmpty) return 'Required';
+                                        if (!RegExp(r"^[a-zA-Z\s\.]+$").hasMatch(val.trim())) return 'Letters only';
+                                        return null;
+                                      },
                                     ),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 8),
+
+                              // Roll Number
                               TextFormField(
                                 controller: _admNoCtrl,
                                 textCapitalization: TextCapitalization.characters,
                                 textInputAction: TextInputAction.next,
+                                onChanged: (_) => setState(() {}),
                                 style: const TextStyle(color: Color(0xFF0F172A), fontSize: 12, fontWeight: FontWeight.bold),
                                 decoration: InputDecoration(
                                   labelText: 'Admission / Roll Number',
@@ -572,14 +869,26 @@ class _LoginScreenState extends State<LoginScreen> {
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
                                   enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
                                   focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF00236F), width: 1.5)),
+                                  errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.2)),
+                                  focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5)),
+                                  errorMaxLines: 2,
+                                  errorStyle: const TextStyle(color: Color(0xFFEF4444), fontSize: 10, fontWeight: FontWeight.w600, height: 1.2),
                                 ),
-                                validator: (val) => val == null || val.trim().isEmpty ? 'Please enter admission / roll number' : null,
+                                validator: (val) {
+                                  if (val == null || val.trim().isEmpty) return 'Admission / Roll number is required';
+                                  if (val.trim().length < 3) return 'Must be at least 3 characters (e.g. 24BCA033)';
+                                  if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(val.trim())) return 'Only letters and numbers allowed';
+                                  return null;
+                                },
                               ),
                               const SizedBox(height: 8),
+
+                              // Email Address
                               TextFormField(
                                 controller: _emailCtrl,
                                 keyboardType: TextInputType.emailAddress,
                                 textInputAction: TextInputAction.next,
+                                onChanged: (_) => setState(() {}),
                                 style: const TextStyle(color: Color(0xFF0F172A), fontSize: 12),
                                 decoration: InputDecoration(
                                   labelText: 'Email Address',
@@ -592,20 +901,28 @@ class _LoginScreenState extends State<LoginScreen> {
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
                                   enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
                                   focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF00236F), width: 1.5)),
+                                  errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.2)),
+                                  focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5)),
+                                  errorMaxLines: 2,
+                                  errorStyle: const TextStyle(color: Color(0xFFEF4444), fontSize: 10, fontWeight: FontWeight.w600, height: 1.2),
                                 ),
                                 validator: (val) {
-                                  if (val == null || val.trim().isEmpty) return 'Please enter your email';
-                                  if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val.trim())) {
-                                    return 'Enter a valid email address';
+                                  if (val == null || val.trim().isEmpty) return 'Email address is required';
+                                  final email = val.trim();
+                                  if (!RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(email)) {
+                                    return 'Enter a valid email address (e.g. name@college.edu)';
                                   }
                                   return null;
                                 },
                               ),
                               const SizedBox(height: 8),
+
+                              // Mobile Phone Number
                               TextFormField(
                                 controller: _phoneCtrl,
                                 keyboardType: TextInputType.phone,
                                 textInputAction: TextInputAction.next,
+                                onChanged: (_) => setState(() {}),
                                 style: const TextStyle(color: Color(0xFF0F172A), fontSize: 12),
                                 decoration: InputDecoration(
                                   labelText: 'Mobile Phone Number',
@@ -618,18 +935,29 @@ class _LoginScreenState extends State<LoginScreen> {
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
                                   enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
                                   focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF00236F), width: 1.5)),
+                                  errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.2)),
+                                  focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5)),
+                                  errorMaxLines: 2,
+                                  errorStyle: const TextStyle(color: Color(0xFFEF4444), fontSize: 10, fontWeight: FontWeight.w600, height: 1.2),
                                 ),
                                 validator: (val) {
-                                  if (val == null || val.trim().isEmpty) return 'Please enter mobile number';
-                                  if (val.trim().length < 10) return 'Must be at least 10 digits';
+                                  if (val == null || val.trim().isEmpty) return 'Mobile number is required';
+                                  final clean = val.trim();
+                                  if (!RegExp(r'^[0-9]+$').hasMatch(clean)) return 'Must contain digits only';
+                                  if (clean.length < 10) return 'Must be a 10-digit number (${clean.length}/10)';
+                                  if (clean.length > 10) return 'Cannot exceed 10 digits (${clean.length}/10)';
+                                  if (!RegExp(r'^[6-9]').hasMatch(clean)) return 'Indian mobile numbers must start with 6, 7, 8, or 9';
                                   return null;
                                 },
                               ),
                               const SizedBox(height: 8),
+
+                              // Address
                               TextFormField(
                                 controller: _addressCtrl,
                                 maxLines: 2,
                                 textInputAction: TextInputAction.next,
+                                onChanged: (_) => setState(() {}),
                                 style: const TextStyle(color: Color(0xFF0F172A), fontSize: 12),
                                 decoration: InputDecoration(
                                   labelText: 'Permanent Residential Address with PIN',
@@ -642,10 +970,20 @@ class _LoginScreenState extends State<LoginScreen> {
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
                                   enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
                                   focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF00236F), width: 1.5)),
+                                  errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.2)),
+                                  focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5)),
+                                  errorMaxLines: 2,
+                                  errorStyle: const TextStyle(color: Color(0xFFEF4444), fontSize: 10, fontWeight: FontWeight.w600, height: 1.2),
                                 ),
-                                validator: (val) => val == null || val.trim().isEmpty ? 'Please enter address' : null,
+                                validator: (val) {
+                                  if (val == null || val.trim().isEmpty) return 'Residential address is required';
+                                  if (val.trim().length < 8) return 'Provide full address with PIN code (${val.trim().length}/8 min)';
+                                  return null;
+                                },
                               ),
                               const SizedBox(height: 8),
+
+                              // Blood Group & Study Period
                               Row(
                                 children: [
                                   Expanded(
@@ -694,10 +1032,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ],
                               ),
                               const SizedBox(height: 8),
+
+                              // Password
                               TextFormField(
                                 controller: _signupPasswordCtrl,
                                 obscureText: _obscureSignupPassword,
                                 textInputAction: TextInputAction.next,
+                                onChanged: (_) => setState(() {}),
                                 style: const TextStyle(color: Color(0xFF0F172A), fontSize: 12),
                                 decoration: InputDecoration(
                                   labelText: 'Create Password (min. 6 characters)',
@@ -717,31 +1058,56 @@ class _LoginScreenState extends State<LoginScreen> {
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
                                   enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
                                   focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF00236F), width: 1.5)),
+                                  errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.2)),
+                                  focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5)),
+                                  errorMaxLines: 2,
+                                  errorStyle: const TextStyle(color: Color(0xFFEF4444), fontSize: 10, fontWeight: FontWeight.w600, height: 1.2),
                                 ),
                                 validator: (val) {
-                                  if (val == null || val.isEmpty) return 'Please create a password';
-                                  if (val.length < 6) return 'Password must be at least 6 characters';
+                                  if (val == null || val.isEmpty) return 'Password is required';
+                                  if (val.length < 6) return 'Password must be at least 6 characters (${val.length}/6)';
                                   return null;
                                 },
                               ),
                               const SizedBox(height: 8),
+
+                              // Confirm Password
                               TextFormField(
                                 controller: _confirmPassCtrl,
                                 obscureText: _obscureConfirmPassword,
                                 textInputAction: TextInputAction.done,
                                 onFieldSubmitted: (_) => _handleRegister(),
+                                onChanged: (_) => setState(() {}),
                                 style: const TextStyle(color: Color(0xFF0F172A), fontSize: 12),
                                 decoration: InputDecoration(
                                   labelText: 'Confirm Password',
                                   labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
                                   prefixIcon: const Icon(Icons.check_circle_outline, color: Color(0xFF00236F), size: 16),
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _obscureConfirmPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                                      color: const Color(0xFF64748B),
-                                      size: 16,
-                                    ),
-                                    onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                                  suffixIcon: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (_confirmPassCtrl.text.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(right: 2),
+                                          child: Icon(
+                                            _confirmPassCtrl.text == _signupPasswordCtrl.text && _signupPasswordCtrl.text.length >= 6
+                                                ? Icons.check_circle
+                                                : Icons.cancel,
+                                            color: _confirmPassCtrl.text == _signupPasswordCtrl.text && _signupPasswordCtrl.text.length >= 6
+                                                ? const Color(0xFF10B981)
+                                                : const Color(0xFFEF4444),
+                                            size: 16,
+                                          ),
+                                        ),
+                                      IconButton(
+                                        icon: Icon(
+                                          _obscureConfirmPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                                          color: const Color(0xFF64748B),
+                                          size: 16,
+                                        ),
+                                        onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                                      ),
+                                    ],
                                   ),
                                   filled: true,
                                   fillColor: const Color(0xFFF8FAFC),
@@ -749,6 +1115,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
                                   enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
                                   focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF00236F), width: 1.5)),
+                                  errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.2)),
+                                  focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5)),
+                                  errorMaxLines: 2,
+                                  errorStyle: const TextStyle(color: Color(0xFFEF4444), fontSize: 10, fontWeight: FontWeight.w600, height: 1.2),
                                 ),
                                 validator: (val) {
                                   if (val == null || val.isEmpty) return 'Please confirm your password';

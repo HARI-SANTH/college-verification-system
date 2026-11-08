@@ -132,6 +132,16 @@ const DOCUMENT_SPECS: DocSpec[] = [
     isRequired: false,
   },
   {
+    type: 'AADHAAR_CARD',
+    aliases: ['AADHAAR_DOCUMENT', 'aadhaar'],
+    label: 'Aadhaar Card',
+    fullName: 'Government Aadhaar Card (UIDAI)',
+    category: 'Identity',
+    icon: 'credit_card',
+    description: 'Official 12-digit UIDAI Aadhaar identity document or e-Aadhaar PDF proof.',
+    isRequired: false,
+  },
+  {
     type: 'PROFILE_PHOTO',
     aliases: ['photoUrl', 'photo'],
     label: 'Profile Photo',
@@ -1902,6 +1912,12 @@ export const VerificationWorkbench: React.FC<Props> = ({
                       selectedStudent?.bankIfscCode || 'Not Provided'
                     )}
                   </div>
+
+                  {renderFieldRow(
+                    'Aadhaar Number',
+                    'aadhaarNumber',
+                    selectedStudent?.aadhaarNumber || 'Not Provided'
+                  )}
 
                   {renderFieldRow(
                     'APAAR / ABC ID',

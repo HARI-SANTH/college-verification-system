@@ -76,6 +76,7 @@ model StudentProfile {
 
   // Government IDs
   apaarId             String?
+  aadhaarNumber       String?
 
   // Status & Field Flagging
   verificationStatus  String            @default("DRAFT") // DRAFT, SUBMITTED, CORRECTION_REQUIRED, VERIFIED

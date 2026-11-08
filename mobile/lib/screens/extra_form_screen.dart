@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
@@ -23,7 +23,7 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
   bool _saving = false;
 
   final ImagePicker _imagePicker = ImagePicker();
-  File? _localPhotoFile;
+  Uint8List? _localPhotoBytes;
 
   // Track if Malayalam names were manually edited
   bool _fnMlManuallyEdited = false;
@@ -63,6 +63,7 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
   late TextEditingController _bankAcctCtrl;
   late TextEditingController _bankIfscCtrl;
   late TextEditingController _apaarCtrl;
+  late TextEditingController _aadhaarCtrl;
 
   // Dropdown states
   String _gender = 'Female';
@@ -172,6 +173,7 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
     _bankAcctCtrl = TextEditingController(text: p.bankAccountNumber ?? '');
     _bankIfscCtrl = TextEditingController(text: p.bankIfscCode ?? '');
     _apaarCtrl = TextEditingController(text: p.apaarId ?? '');
+    _aadhaarCtrl = TextEditingController(text: p.aadhaarNumber ?? '');
 
     if (p.gender != null && ['Female', 'Male', 'Other'].contains(p.gender)) {
       _gender = p.gender!;
@@ -235,6 +237,9 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
     'CASTE_CERTIFICATE': ['CASTE_CERT'],
     'APAAR_CARD': ['APAAR_DOCUMENT'],
     'APAAR_DOCUMENT': ['APAAR_CARD'],
+    'AADHAAR_CARD': ['AADHAAR_DOCUMENT', 'aadhaarNumber', 'aadhaar'],
+    'AADHAAR_DOCUMENT': ['AADHAAR_CARD', 'aadhaarNumber', 'aadhaar'],
+    'aadhaarNumber': ['AADHAAR_CARD', 'AADHAAR_DOCUMENT', 'aadhaar'],
     'PROFILE_PHOTO': ['photoUrl', 'photo'],
     'photoUrl': ['PROFILE_PHOTO'],
     'photo': ['PROFILE_PHOTO'],
@@ -265,6 +270,62 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
       }
     }
     return null;
+  }
+
+  bool _stepHasFlaggedError(int stepNumber) {
+    if (_flags.isEmpty) return false;
+
+    final stepKeys = <String>[];
+    switch (stepNumber) {
+      case 1:
+        stepKeys.addAll([
+          'firstName', 'lastName', 'firstNameMalayalam', 'lastNameMalayalam',
+          'gender', 'dob', 'bloodGroup', 'nationality', 'religion', 'caste',
+          'address', 'permanentAddress', 'fatherName', 'fatherOccupation',
+          'motherName', 'motherOccupation', 'guardianName', 'guardianOccupation',
+          'PROFILE_PHOTO', 'photoUrl', 'photo'
+        ]);
+        break;
+      case 2:
+        stepKeys.addAll([
+          'courseAdmitted', 'quota', 'annualIncome', 'isEws'
+        ]);
+        break;
+      case 3:
+        stepKeys.addAll([
+          'prevInstitutionName', 'prevCourse', 'prevRegisterNumber',
+          'prevBoardUniversity', 'prevPeriodOfStudy', 'prevPercentage'
+        ]);
+        break;
+      case 4:
+        stepKeys.addAll([
+          'PLUS_TWO_CERT', 'PLUS_TWO_CERTIFICATE',
+          'SSLC_CERT', 'SSLC_CERTIFICATE',
+          'ALLOTMENT_MEMO',
+          'COMMUNITY_CERT', 'COMMUNITY_CERTIFICATE',
+          'INCOME_CERT', 'INCOME_CERTIFICATE',
+          'CASTE_CERT', 'CASTE_CERTIFICATE'
+        ]);
+        break;
+      case 5:
+        stepKeys.addAll([
+          'bankAccountName', 'bankName', 'bankBranch',
+          'bankAccountNumber', 'bankIfscCode', 'BANK_PASSBOOK',
+          'apaarId', 'APAAR_CARD', 'APAAR_DOCUMENT',
+          'aadhaarNumber', 'AADHAAR_CARD', 'AADHAAR_DOCUMENT',
+        ]);
+        break;
+    }
+
+    for (final key in stepKeys) {
+      final keysToCheck = [key, ...?_keyAliases[key]];
+      for (final k in keysToCheck) {
+        if (_flags[k] != null && _flags[k]['status'] == 'FLAGGED_ERROR') {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   Future<void> _pickDate() async {
@@ -364,12 +425,14 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
 
   Future<void> _processAndUploadPhoto(XFile image) async {
     setState(() {
-      _localPhotoFile = File(image.path);
       _saving = true;
     });
 
     try {
       final bytes = await image.readAsBytes();
+      setState(() {
+        _localPhotoBytes = bytes;
+      });
       final doc = await ApiService.uploadDocument(
         type: 'PROFILE_PHOTO',
         fileName: image.name.isNotEmpty ? image.name : 'profile_photo_${widget.profile.admissionNumber}.jpg',
@@ -517,6 +580,7 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
         'bankAccountNumber': _bankAcctCtrl.text.trim(),
         'bankIfscCode': _bankIfscCtrl.text.trim(),
         'apaarId': _apaarCtrl.text.trim(),
+        'aadhaarNumber': _aadhaarCtrl.text.trim(),
         'isFinalSubmission': isFinal,
       });
 
@@ -643,6 +707,7 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
   Widget _wizardTab(int stepNumber, String title, IconData icon) {
     final isActive = _activeStep == stepNumber;
     final isDone = _activeStep > stepNumber;
+    final hasFlag = _stepHasFlaggedError(stepNumber);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -652,37 +717,75 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isActive
-                    ? const Color(0xFF00236F)
-                    : isDone
-                        ? const Color(0xFF0D9488)
-                        : const Color(0xFFF1F5F9),
-              ),
-              child: Center(
-                child: isDone
-                    ? const Icon(Icons.check, color: Colors.white, size: 16)
-                    : Text(
-                        '$stepNumber',
-                        style: TextStyle(
-                          color: isActive ? Colors.white : const Color(0xFF64748B),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isActive
+                        ? const Color(0xFF00236F)
+                        : (isDone && !hasFlag)
+                            ? const Color(0xFF0D9488)
+                            : const Color(0xFFF1F5F9),
+                    border: hasFlag
+                        ? Border.all(color: const Color(0xFFEF4444), width: 1.5)
+                        : null,
+                  ),
+                  child: Center(
+                    child: (isDone && !hasFlag)
+                        ? const Icon(Icons.check, color: Colors.white, size: 16)
+                        : Text(
+                            '$stepNumber',
+                            style: TextStyle(
+                              color: isActive
+                                  ? Colors.white
+                                  : hasFlag
+                                      ? const Color(0xFFDC2626)
+                                      : const Color(0xFF64748B),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                  ),
+                ),
+                // Small Red Dot Badge for Flagged Fields
+                if (hasFlag)
+                  Positioned(
+                    top: -2,
+                    right: -2,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFEF4444).withValues(alpha: 0.4),
+                            blurRadius: 3,
+                            spreadRadius: 0.5,
+                          ),
+                        ],
                       ),
-              ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 4),
             Text(
               title,
               style: TextStyle(
-                color: isActive ? const Color(0xFF00236F) : const Color(0xFF64748B),
+                color: hasFlag
+                    ? const Color(0xFFDC2626)
+                    : isActive
+                        ? const Color(0xFF00236F)
+                        : const Color(0xFF64748B),
                 fontSize: 9.5,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                fontWeight: (isActive || hasFlag) ? FontWeight.bold : FontWeight.w500,
               ),
             ),
           ],
@@ -716,7 +819,7 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
       icon = Icons.warning_amber_rounded;
       iconColor = const Color(0xFFB45309);
       title = 'Office Review: Corrections Required';
-      subtitle = 'Office staff flagged specific items. Only highlighted fields are unlocked for you to correct.';
+      subtitle = 'Office staff flagged specific items (marked with red dots on the steps above). Only highlighted fields are unlocked for you to correct.';
     } else if (_isLocked) {
       bg = const Color(0xFFF2F3FF);
       border = const Color(0xFFDAE2FD);
@@ -790,8 +893,8 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(11),
-                    child: _localPhotoFile != null
-                        ? Image.file(_localPhotoFile!, fit: BoxFit.cover)
+                    child: _localPhotoBytes != null
+                        ? Image.memory(_localPhotoBytes!, fit: BoxFit.cover)
                         : (_photoUrl != null && _photoUrl!.isNotEmpty)
                             ? Image.network(_resolvePhotoUrl(_photoUrl!), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.person, size: 36, color: Color(0xFF64748B)))
                             : const Icon(Icons.person, size: 36, color: Color(0xFF64748B)),
@@ -806,13 +909,13 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
                     const Text('Student Profile Photograph', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))),
                     const SizedBox(height: 2),
                     Text(
-                      _uploadedDocs.containsKey('PROFILE_PHOTO') || _localPhotoFile != null
+                      _uploadedDocs.containsKey('PROFILE_PHOTO') || _localPhotoBytes != null
                           ? 'Photo attached successfully'
                           : 'Passport photograph for College ID Card',
                       style: TextStyle(
                         fontSize: 11,
-                        color: _uploadedDocs.containsKey('PROFILE_PHOTO') || _localPhotoFile != null ? const Color(0xFF15803D) : const Color(0xFF64748B),
-                        fontWeight: _uploadedDocs.containsKey('PROFILE_PHOTO') || _localPhotoFile != null ? FontWeight.bold : FontWeight.normal,
+                        color: _uploadedDocs.containsKey('PROFILE_PHOTO') || _localPhotoBytes != null ? const Color(0xFF15803D) : const Color(0xFF64748B),
+                        fontWeight: _uploadedDocs.containsKey('PROFILE_PHOTO') || _localPhotoBytes != null ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -820,7 +923,7 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
                       onPressed: _isFieldEditable('PROFILE_PHOTO') ? _handleProfilePhotoUpload : null,
                       icon: const Icon(Icons.camera_alt_outlined, size: 14, color: Colors.white),
                       label: Text(
-                        _uploadedDocs.containsKey('PROFILE_PHOTO') || _localPhotoFile != null ? 'Change Photo' : 'Upload Photo',
+                        _uploadedDocs.containsKey('PROFILE_PHOTO') || _localPhotoBytes != null ? 'Change Photo' : 'Upload Photo',
                         style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                       style: ElevatedButton.styleFrom(
@@ -1251,7 +1354,8 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
 
   // --- STEP 4: Dedicated Certificates & Documents Upload Step ---
   Widget _buildStep4Documents() {
-    final isCommunityNeeded = _quota == 'Community Quota' || _quota == 'Management Quota';
+    final isCommunityQuota = _quota == 'Community Quota';
+    final hasIncomeEntered = _incomeCtrl.text.trim().isNotEmpty && ((double.tryParse(_incomeCtrl.text.trim()) ?? 0) > 0);
 
     return _cardSection(
       title: 'Step 4: Official Certificates & Document Uploads',
@@ -1298,24 +1402,25 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
           isRequired: true,
         ),
 
-        // Community Certificate (Shown when Community Quota is selected)
-        if (isCommunityNeeded)
+        // Community Certificate: ONLY visible and mandatory when quota is Community Quota
+        if (isCommunityQuota)
           _documentTile(
             docType: 'COMMUNITY_CERT',
-            title: 'Community Certificate (Mandatory for $_quota)',
-            subtitle: 'Issued by Parish Priest / Authority (PDF, Max 10 MB)',
+            title: 'Community Certificate (Mandatory for Community Quota)',
+            subtitle: 'Issued by Parish Priest / Competent Authority (PDF, Max 10 MB)',
             isRequired: true,
           ),
 
-        // Income Certificate (Shown when EWS is eligible)
-        if (_isEws)
+        // Income Certificate (Mandatory for EWS < ₹1,00,000, or optional if income is declared)
+        if (_isEws || hasIncomeEntered)
           _documentTile(
             docType: 'INCOME_CERT',
-            title: 'Revenue Village Income Certificate (EWS)',
-            subtitle: 'Certifies income < ₹1,00,000 for EWS (PDF, Max 10 MB)',
-            isRequired: true,
+            title: _isEws ? 'Revenue Village Income Certificate (Mandatory for EWS)' : 'Annual Income Certificate (Optional)',
+            subtitle: _isEws ? 'Certifies income < ₹1,00,000 for EWS (PDF, Max 10 MB)' : 'Income proof for fee concession / scholarships (PDF, Max 10 MB)',
+            isRequired: _isEws,
           ),
 
+        // Caste Certificate (For Reserved Categories - Optional / as applicable)
         _documentTile(
           docType: 'CASTE_CERT',
           title: 'Caste Certificate (For Reserved Categories)',
@@ -1391,6 +1496,27 @@ class _ExtraFormScreenState extends State<ExtraFormScreen> {
           docType: 'BANK_PASSBOOK',
           title: 'Bank Passbook Front Page',
           subtitle: 'Account No & IFSC proof (PDF, Max 10 MB)',
+          isRequired: false,
+        ),
+        const SizedBox(height: 14),
+
+        const Divider(color: Color(0xFFE2E8F0)),
+        const SizedBox(height: 8),
+
+        // Aadhaar Details
+        _buildFormField(
+          keyName: 'aadhaarNumber',
+          label: 'AADHAAR NUMBER (UIDAI)',
+          controller: _aadhaarCtrl,
+          hint: '12-digit Aadhaar Number (e.g. 7482 9102 4821)',
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 12),
+
+        _documentTile(
+          docType: 'AADHAAR_CARD',
+          title: 'Aadhaar Card / e-Aadhaar Letter',
+          subtitle: 'Official UIDAI 12-digit identity proof (PDF, Max 10 MB)',
           isRequired: false,
         ),
         const SizedBox(height: 14),

@@ -11,7 +11,8 @@ export type DocumentType =
   | 'INCOME_CERTIFICATE'
   | 'COMMUNITY_CERTIFICATE'
   | 'BANK_PASSBOOK'
-  | 'APAAR_DOCUMENT';
+  | 'APAAR_DOCUMENT'
+  | 'AADHAAR_CARD';
 
 export interface FieldFlagDetail {
   status: 'FLAGGED_ERROR' | 'VALID';
@@ -79,6 +80,7 @@ export interface StudentProfile {
   prevPercentage?: number | null;
 
   apaarId?: string | null;
+  aadhaarNumber?: string | null;
 
   verificationStatus: VerificationStatus;
   verifiedAt?: string | null;

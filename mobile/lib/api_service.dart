@@ -6,10 +6,20 @@ import 'models.dart';
 
 class ApiService {
   // Over USB debugging with `adb reverse tcp:5000 tcp:5000`, 127.0.0.1 connects to PC host directly in debug mode.
-  // In release mode or if running standalone, defaults to the deployed Render cloud backend.
-  static String defaultHost = kDebugMode
-      ? 'http://127.0.0.1:5000/api'
-      : 'https://college-verification-system.onrender.com/api';
+  // When hosted on Web (e.g. GitHub Pages) or production mobile, automatically targets the Render cloud backend.
+  static String get defaultHost {
+    if (kIsWeb) {
+      final host = Uri.base.host.toLowerCase();
+      // On GitHub Pages, Render, or any remote web domain, connect directly to the cloud backend
+      if (host.contains('github.io') || host.contains('onrender.com') || host.contains('web.app') || (host.isNotEmpty && host != 'localhost' && host != '127.0.0.1')) {
+        return 'https://college-verification-system.onrender.com/api';
+      }
+      return kDebugMode ? 'http://127.0.0.1:5000/api' : 'https://college-verification-system.onrender.com/api';
+    }
+    return kDebugMode
+        ? 'http://127.0.0.1:5000/api'
+        : 'https://college-verification-system.onrender.com/api';
+  }
 
   static Future<String> getBaseUrl() async {
     final prefs = await SharedPreferences.getInstance();

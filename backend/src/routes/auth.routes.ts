@@ -2,10 +2,13 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
+import fs from 'fs';
+import path from 'path';
 import { prisma } from '../prisma';
 import { authenticateToken } from '../middleware/auth';
 import { Role } from '../types';
 import { mailService } from '../services/mail.service';
+import { uploadFileToCloud, getUploadsRoot } from '../services/storage.service';
 
 const router = Router();
 
@@ -42,6 +45,8 @@ const registerSchema = z.object({
   address: z.string().min(1),
   bloodGroup: z.string().min(1),
   timePeriodOfStudy: z.string().min(4), // e.g. "2024-2028"
+  photoBase64: z.string().optional(),
+  photoFileName: z.string().optional(),
 });
 
 const loginSchema = z.object({
@@ -99,15 +104,62 @@ router.post('/register', async (req: Request, res: Response) => {
         },
       },
       include: {
-        studentProfile: true,
+        studentProfile: {
+          include: {
+            documents: true,
+          },
+        },
       },
     });
+
+    // Save passport photo if uploaded during registration
+    let createdPhotoDoc: any = null;
+    if (validatedData.photoBase64 && user.studentProfile) {
+      try {
+        const buffer = Buffer.from(validatedData.photoBase64, 'base64');
+        const originalName = validatedData.photoFileName || `profile_photo_${user.studentProfile.admissionNumber}.jpg`;
+        const ext = path.extname(originalName) || '.jpg';
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        const photosDir = path.join(getUploadsRoot(), 'photos');
+        if (!fs.existsSync(photosDir)) {
+          fs.mkdirSync(photosDir, { recursive: true });
+        }
+        const tempPath = path.join(photosDir, `photo-${uniqueSuffix}${ext}`);
+        fs.writeFileSync(tempPath, buffer);
+        const fileUrl = await uploadFileToCloud(tempPath, originalName, 'image/jpeg');
+
+        createdPhotoDoc = await prisma.studentDocument.create({
+          data: {
+            studentProfileId: user.studentProfile.id,
+            type: 'PROFILE_PHOTO',
+            fileName: originalName,
+            filePath: tempPath,
+            fileUrl,
+            fileMimeType: 'image/jpeg',
+            fileSize: buffer.length,
+            status: 'VALID',
+          },
+        });
+      } catch (photoErr) {
+        console.warn('[Register Photo Upload Warning]', photoErr);
+      }
+    }
 
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
       JWT_SECRET,
       { expiresIn: '30d' }
     );
+
+    const studentProfile = user.studentProfile as any;
+    const fullProfile = studentProfile
+      ? {
+          ...studentProfile,
+          documents: createdPhotoDoc
+            ? [...(studentProfile.documents || []), createdPhotoDoc]
+            : (studentProfile.documents || []),
+        }
+      : null;
 
     return res.status(201).json({
       message: 'Registration successful',
@@ -117,7 +169,7 @@ router.post('/register', async (req: Request, res: Response) => {
         email: user.email,
         phoneNumber: user.phoneNumber,
         role: user.role,
-        studentProfile: formatStudentProfile(user.studentProfile),
+        studentProfile: formatStudentProfile(fullProfile),
       },
     });
   } catch (err: any) {

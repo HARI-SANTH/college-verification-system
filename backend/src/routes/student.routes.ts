@@ -20,6 +20,8 @@ const ALIAS_MAP: Record<string, string[]> = {
   CASTE_CERT: ['CASTE_CERTIFICATE'],
   APAAR_DOCUMENT: ['APAAR_CARD'],
   APAAR_CARD: ['APAAR_DOCUMENT'],
+  AADHAAR_CARD: ['AADHAAR_DOCUMENT', 'aadhaar'],
+  AADHAAR_DOCUMENT: ['AADHAAR_CARD', 'aadhaar'],
   PROFILE_PHOTO: ['photoUrl', 'photo'],
   photoUrl: ['PROFILE_PHOTO'],
   photo: ['PROFILE_PHOTO'],
@@ -40,6 +42,8 @@ const CANONICAL_DOC_MAP: Record<string, string> = {
   BANK_PASSBOOK: 'BANK_PASSBOOK',
   APAAR_CARD: 'APAAR_DOCUMENT',
   APAAR_DOCUMENT: 'APAAR_DOCUMENT',
+  AADHAAR_CARD: 'AADHAAR_CARD',
+  AADHAAR_DOCUMENT: 'AADHAAR_CARD',
   PROFILE_PHOTO: 'PROFILE_PHOTO',
   photoUrl: 'PROFILE_PHOTO',
   photo: 'PROFILE_PHOTO',
@@ -156,6 +160,7 @@ router.put('/profile', async (req: Request, res: Response) => {
       'prevPeriodOfStudy',
       'prevPercentage',
       'apaarId',
+      'aadhaarNumber',
     ];
 
     const dataToUpdate: Record<string, any> = {};
