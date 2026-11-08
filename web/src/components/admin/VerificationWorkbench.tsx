@@ -28,6 +28,7 @@ import {
   Split,
   Move,
   Zap,
+  CreditCard,
 } from 'lucide-react';
 
 interface Props {
@@ -1516,6 +1517,36 @@ export const VerificationWorkbench: React.FC<Props> = ({
                 )}
 
                 {/* ---------------------------------------------------- */}
+                {/* AADHAAR DEDICATED INSPECTION BANNER (When Aadhaar Card tab is active) */}
+                {activeDocSpecType === 'AADHAAR_CARD' && (
+                  <div className="p-3.5 bg-indigo-50/90 border-2 border-indigo-300 rounded-2xl flex items-center justify-between text-xs shadow-xs">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-[#00236f] text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <CreditCard className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="font-extrabold text-indigo-950 flex items-center gap-1.5">
+                          <span>Aadhaar Identity Verification Mode</span>
+                          <span className="px-2 py-0.2 rounded-full bg-indigo-200 text-indigo-800 text-[10px] font-mono font-bold">UIDAI</span>
+                        </div>
+                        <div className="text-[11px] text-indigo-700 font-medium mt-0.5">
+                          Comparing 12-digit UID: <strong className="font-mono text-indigo-950">{selectedStudent?.aadhaarNumber || 'Not Provided'}</strong> with official uploaded e-Aadhaar card on the left pane.
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => openFlagModal('aadhaarNumber', 'Aadhaar Number (UIDAI)')}
+                        className="px-3 py-1.5 rounded-lg bg-white border border-rose-300 hover:bg-rose-50 text-rose-700 font-extrabold text-[11px] flex items-center gap-1 shadow-2xs transition-colors"
+                        title="Flag Aadhaar Discrepancy"
+                      >
+                        <Flag className="w-3 h-3 text-rose-600" />
+                        <span>Flag Aadhaar</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* STEP 1: PERSONAL & IDENTITY DATA */}
                 {/* ---------------------------------------------------- */}
                 <div className="space-y-2.5">
@@ -1954,7 +1985,7 @@ export const VerificationWorkbench: React.FC<Props> = ({
                         5
                       </span>
                       <span className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                        Bank Details & APAAR Identification
+                        Bank Details & Government Identity (Aadhaar & APAAR)
                       </span>
                     </div>
                     <span className="text-[10px] font-bold text-slate-400">Step 5</span>
