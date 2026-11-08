@@ -436,18 +436,49 @@ router.get('/documents/:id/preview', async (req: Request, res: Response) => {
     res.removeHeader('X-Frame-Options');
 
     // 1. Check if local file exists on disk
-    if (document.filePath && fs.existsSync(document.filePath)) {
-      return fs.createReadStream(document.filePath).pipe(res);
+    let diskPath = document.filePath;
+    if (diskPath && fs.existsSync(diskPath)) {
+      return fs.createReadStream(diskPath).pipe(res);
+    }
+
+    // 1b. Check relative candidates if path was recorded on another OS/machine
+    const fileName = document.fileName || (diskPath ? path.basename(diskPath) : '');
+    if (fileName) {
+      const candidates = [
+        path.resolve(process.cwd(), 'uploads/documents', fileName),
+        path.resolve(process.cwd(), 'uploads/certificates', fileName),
+        path.resolve(process.cwd(), 'uploads/photos', fileName),
+        path.resolve(process.cwd(), 'backend/uploads/documents', fileName),
+        path.resolve(process.cwd(), 'backend/uploads/certificates', fileName),
+        path.resolve(process.cwd(), 'backend/uploads/photos', fileName),
+      ];
+      for (const cand of candidates) {
+        if (fs.existsSync(cand)) {
+          return fs.createReadStream(cand).pipe(res);
+        }
+      }
     }
 
     // 2. Fetch from remote cloud storage (Supabase or external URL)
     if (document.fileUrl && (document.fileUrl.startsWith('http://') || document.fileUrl.startsWith('https://'))) {
-      const response = await fetch(document.fileUrl);
-      if (!response.ok) {
-        return res.status(response.status).json({ error: 'Failed to retrieve document from cloud storage' });
+      const isLocalhost = document.fileUrl.includes('localhost:') || document.fileUrl.includes('127.0.0.1:');
+      if (!isLocalhost) {
+        const response = await fetch(document.fileUrl);
+        if (response.ok) {
+          const buffer = Buffer.from(await response.arrayBuffer());
+          return res.send(buffer);
+        }
+      } else {
+        // If localhost URL was stored, resolve locally
+        try {
+          const urlObj = new URL(document.fileUrl);
+          const rel = urlObj.pathname.replace(/^\/uploads\//, '');
+          const localUpload = path.resolve(process.cwd(), 'uploads', rel);
+          const backendUpload = path.resolve(process.cwd(), 'backend/uploads', rel);
+          if (fs.existsSync(localUpload)) return fs.createReadStream(localUpload).pipe(res);
+          if (fs.existsSync(backendUpload)) return fs.createReadStream(backendUpload).pipe(res);
+        } catch (_) {}
       }
-      const buffer = Buffer.from(await response.arrayBuffer());
-      return res.send(buffer);
     }
 
     return res.status(404).json({ error: 'Document file content unavailable' });

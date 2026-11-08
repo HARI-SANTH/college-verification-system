@@ -1273,19 +1273,14 @@ export const VerificationWorkbench: React.FC<Props> = ({
                         />
                       </div>
                     ) : (
-                      // Native Inline PDF Object & Frame Viewer with Zero Download Prompt
-                      <div className="w-full h-full flex flex-col bg-slate-100">
-                        <object
-                          data={`${getDocPreviewUrl(activeDoc)}#view=FitH&toolbar=1&navpanes=0`}
-                          type="application/pdf"
-                          className="w-full h-full border-0"
-                        >
-                          <iframe
-                            src={`${getDocPreviewUrl(activeDoc)}#view=FitH&toolbar=1&navpanes=0`}
-                            className="w-full h-full border-0"
-                            title={activeDoc.fileName}
-                          />
-                        </object>
+                      // Native Inline PDF Frame Viewer with Zero Download Prompt
+                      <div className="w-full h-full flex flex-col bg-slate-100 relative">
+                        <iframe
+                          key={activeDoc.id || activeDoc.fileName}
+                          src={`${getDocPreviewUrl(activeDoc)}#view=FitH&toolbar=1&navpanes=0`}
+                          className="w-full h-full border-0 rounded-xl"
+                          title={activeDoc.fileName}
+                        />
                       </div>
                     )}
                   </div>
