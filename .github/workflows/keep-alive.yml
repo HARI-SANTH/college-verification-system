@@ -1,0 +1,29 @@
+name: Render Backend Keep-Alive Pinger
+
+on:
+  # Run every 10 minutes to prevent Render's 15-minute inactivity spin down
+  schedule:
+    - cron: '*/10 * * * *'
+  # Allow manual trigger anytime from the GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  ping-render:
+    name: Ping College Verification API
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Ping Render Backend Health Endpoint
+        run: |
+          echo "Sending keep-alive request to Render backend..."
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}\nTIME_TOTAL:%{time_total}s\n" -m 60 "https://college-verification-system.onrender.com/api/health")
+          echo "$RESPONSE"
+          
+          # Check HTTP Status Code
+          STATUS_CODE=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d':' -f2)
+          if [ "$STATUS_CODE" -eq 200 ]; then
+            echo "Success: Render backend is awake and responding healthy (HTTP 200)!"
+          else
+            echo "Warning: Received HTTP $STATUS_CODE. Server may still be booting."
+          fi
