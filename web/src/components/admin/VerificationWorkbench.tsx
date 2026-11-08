@@ -566,6 +566,19 @@ export const VerificationWorkbench: React.FC<Props> = ({
           text: 'The 12-digit APAAR / ABC ID does not match the official DigiLocker card uploaded. Please verify the 12-digit number.',
         },
       ];
+    } else if (key === 'aadhaarNumber' || key === 'AADHAAR_CARD' || key === 'AADHAAR_DOCUMENT') {
+      presets = [
+        {
+          id: 'AADHAAR_MISMATCH',
+          label: 'Aadhaar number / card mismatch',
+          text: 'The 12-digit Aadhaar number or uploaded card details do not match official UIDAI records. Please verify 12-digit number.',
+        },
+        {
+          id: 'AADHAAR_UNREADABLE',
+          label: 'Aadhaar copy unreadable or incomplete',
+          text: 'Uploaded Aadhaar card copy is blurred or missing UIDAI details. Please upload a clear official e-Aadhaar PDF or scanned card.',
+        },
+      ];
     } else {
       presets = [
         {
