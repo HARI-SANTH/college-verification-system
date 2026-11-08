@@ -589,12 +589,20 @@ export const StudentRegistryConsole: React.FC<Props> = ({
                             <span className="text-[11px] text-slate-500 font-sans block">
                               {student.firstNameMalayalam || 'അനന്യ'} {student.lastNameMalayalam || 'നായർ'}
                             </span>
-                            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
+                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px] text-slate-500">
                               <span className="bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-mono font-bold">
                                 {student.admissionNumber}
                               </span>
                               <span>•</span>
-                              <span>APAAR: {student.apaarId || '9942-8812-7731'}</span>
+                              <span className="font-mono text-slate-700 font-semibold">
+                                UID: {student.aadhaarNumber || 'Not Provided'}
+                              </span>
+                              {student.apaarId && (
+                                <>
+                                  <span>•</span>
+                                  <span className="font-mono text-slate-400">APAAR: {student.apaarId}</span>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -656,6 +664,7 @@ export const StudentRegistryConsole: React.FC<Props> = ({
                         <div className="flex flex-wrap items-center gap-1 text-[10px]">
                           <span className="px-1.5 py-0.5 rounded bg-slate-100 font-bold text-slate-700">SSLC</span>
                           <span className="px-1.5 py-0.5 rounded bg-slate-100 font-bold text-slate-700">+2</span>
+                          <span className="px-1.5 py-0.5 rounded bg-slate-100 font-bold text-slate-700">Aadhaar</span>
                           <span className="px-1.5 py-0.5 rounded bg-slate-100 font-bold text-slate-700">Passbook</span>
                           <span className="px-1.5 py-0.5 rounded bg-slate-100 font-bold text-slate-700">APAAR</span>
                         </div>

@@ -350,9 +350,21 @@ export const CommandDashboard: React.FC<Props> = ({
                                 <span className="text-xs font-bold text-slate-900 group-hover:text-[#00236f] block">
                                   {student.firstName} {student.lastName}
                                 </span>
-                                <span className="text-[10px] text-slate-400">
-                                  Roll #{student.admissionNumber} • {student.user?.email}
-                                </span>
+                                <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
+                                  <span className="font-mono font-semibold text-slate-600">
+                                    Roll #{student.admissionNumber}
+                                  </span>
+                                  {student.aadhaarNumber && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="font-mono text-slate-700 font-bold">
+                                        UID: {student.aadhaarNumber}
+                                      </span>
+                                    </>
+                                  )}
+                                  <span>•</span>
+                                  <span>{student.user?.email}</span>
+                                </div>
                               </div>
                             </div>
                           </td>

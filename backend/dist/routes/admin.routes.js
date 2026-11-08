@@ -48,6 +48,7 @@ const buildStudentFilter = (query) => {
             { admissionNumber: { contains: s } },
             { user: { email: { contains: s } } },
             { user: { phoneNumber: { contains: s } } },
+            { aadhaarNumber: { contains: s } },
         ];
     }
     return where;

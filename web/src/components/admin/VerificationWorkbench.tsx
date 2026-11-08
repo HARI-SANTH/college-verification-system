@@ -725,6 +725,11 @@ export const VerificationWorkbench: React.FC<Props> = ({
                 {selectedStudent.admissionNumber}
               </span>
               <span className="text-slate-300 hidden md:inline">•</span>
+              <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs font-mono font-bold hidden md:inline-flex items-center gap-1">
+                <span className="text-[10px] font-sans font-semibold text-indigo-600">Aadhaar:</span>
+                {selectedStudent.aadhaarNumber || 'Not Provided'}
+              </span>
+              <span className="text-slate-300 hidden md:inline">•</span>
               <span className="text-xs text-slate-500 hidden md:inline truncate">
                 {selectedStudent.courseAdmitted || 'BCA'} • AY {selectedStudent.timePeriodOfStudy || '2024–28'}
               </span>
@@ -943,8 +948,13 @@ export const VerificationWorkbench: React.FC<Props> = ({
                               </span>
                             )}
                           </div>
-                          <div className="text-[11px] font-mono font-bold text-[#00236f] mt-0.5">
-                            {s.admissionNumber}
+                          <div className="flex items-center justify-between text-[11px] font-mono font-bold text-[#00236f] mt-0.5">
+                            <span>{s.admissionNumber}</span>
+                            {s.aadhaarNumber && (
+                              <span className="text-[10px] text-slate-500 font-mono font-normal">
+                                UID: •••• {s.aadhaarNumber.replace(/\s+/g, '').slice(-4)}
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1">
                             <span className="truncate">{s.courseAdmitted || 'BCA'}</span>
@@ -1610,6 +1620,20 @@ export const VerificationWorkbench: React.FC<Props> = ({
                       selectedStudent?.caste || 'General / Open'
                     )}
                   </div>
+
+                  {/* Aadhaar (UIDAI) & APAAR ID */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {renderFieldRow(
+                      'Aadhaar Number (UIDAI)',
+                      'aadhaarNumber',
+                      selectedStudent?.aadhaarNumber || 'Not Provided'
+                    )}
+                    {renderFieldRow(
+                      'APAAR / ABC ID',
+                      'apaarId',
+                      selectedStudent?.apaarId || 'Not Provided'
+                    )}
+                  </div>
                 </div>
 
                 {/* ---------------------------------------------------- */}
@@ -1939,17 +1963,18 @@ export const VerificationWorkbench: React.FC<Props> = ({
                     )}
                   </div>
 
-                  {renderFieldRow(
-                    'Aadhaar Number',
-                    'aadhaarNumber',
-                    selectedStudent?.aadhaarNumber || 'Not Provided'
-                  )}
-
-                  {renderFieldRow(
-                    'APAAR / ABC ID',
-                    'apaarId',
-                    selectedStudent?.apaarId || 'Not Provided'
-                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    {renderFieldRow(
+                      'Aadhaar Number (UIDAI)',
+                      'aadhaarNumber',
+                      selectedStudent?.aadhaarNumber || 'Not Provided'
+                    )}
+                    {renderFieldRow(
+                      'APAAR / ABC ID',
+                      'apaarId',
+                      selectedStudent?.apaarId || 'Not Provided'
+                    )}
+                  </div>
                 </div>
 
                 {/* ---------------------------------------------------- */}
