@@ -18,8 +18,17 @@ dev.db-journal
 uploads/
 
 # Screenshots & Binaries
-*.png
+phone_*.png
 *.exe
 *.apk
 *.traineddata
 cloudflared.exe
+
+# Allow UI logos and icons in web, backend and mobile assets
+!**/college_logo.png
+!**/college_logo.jpg
+!web/public/*.png
+!backend/public/*.png
+!mobile/assets/images/*.png
+!mobile/web/*.png
+!mobile/web/icons/*.png

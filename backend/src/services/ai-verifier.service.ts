@@ -187,28 +187,126 @@ export class AIVerifierService {
     if (!extracted || !extracted.text) return { income: null, raw: null };
     const text = extracted.lowerText;
 
-    // Pattern 1: Rs. 1,50,000 / Rupees One Lakh / INR 150000
-    const rsMatch = text.match(/(?:rs\.?|inr|rupees|income\s*(?:of|is|:)?)\s*([0-9,]{4,10})/i);
-    if (rsMatch) {
-      const clean = rsMatch[1].replace(/,/g, '');
-      const num = parseInt(clean, 10);
-      if (!isNaN(num) && num > 1000) {
-        return { income: num, raw: `₹${num.toLocaleString('en-IN')}` };
-      }
-    }
+    // Must be preceded or followed by currency or income context keywords
+    const patterns = [
+      /(?:annual\s*income|family\s*income|total\s*income|income\s*(?:is|of|:)?|rs\.?|inr|rupees|₹)\s*[:\-\s]*₹?\s*([0-9,]{4,10})/i,
+      /([0-9,]{4,10})\s*(?:rupees|inr|\/\-)/i,
+    ];
 
-    // Pattern 2: Any 5-7 digit number in numbers array
-    for (const n of extracted.numbers) {
-      const clean = n.replace(/[^0-9]/g, '');
-      if (clean.length >= 5 && clean.length <= 7) {
+    for (const pat of patterns) {
+      const match = text.match(pat);
+      if (match) {
+        const clean = match[1].replace(/,/g, '');
         const num = parseInt(clean, 10);
-        if (!isNaN(num) && num >= 10000 && num <= 5000000) {
+        if (!isNaN(num) && num >= 5000 && num <= 10000000) {
           return { income: num, raw: `₹${num.toLocaleString('en-IN')}` };
         }
       }
     }
 
     return { income: null, raw: null };
+  }
+
+  // Check if target name tokens (individual words) appear in the document text
+  private matchNameTokens(extracted: ExtractedDocData | null, targetName: string): boolean {
+    if (!extracted || !targetName) return false;
+    const cleanTarget = targetName.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
+    if (!cleanTarget) return false;
+
+    const docText = extracted.lowerText;
+    const cleanDoc = docText.replace(/[^a-z0-9]/g, '');
+
+    // 1. Direct whole name match (ignoring spaces and dots)
+    const wholeClean = cleanTarget.replace(/\s+/g, '');
+    if (wholeClean && cleanDoc.includes(wholeClean)) return true;
+
+    // 2. Single letter initial (e.g. "S")
+    if (cleanTarget.length === 1) {
+      const regex = new RegExp(`\\b${cleanTarget}\\b`, 'i');
+      return regex.test(docText);
+    }
+
+    const tokens = cleanTarget.split(/\s+/).filter((t) => t.length >= 2);
+    if (tokens.length === 0) {
+      const regex = new RegExp(`\\b${cleanTarget}\\b`, 'i');
+      return regex.test(docText);
+    }
+
+    // 3. Significant tokens (length >= 3)
+    const significantTokens = tokens.filter((t) => t.length >= 3);
+    if (significantTokens.length > 0) {
+      // At least one primary name token must appear
+      return significantTokens.some((t) => docText.includes(t));
+    }
+    return tokens.some((t) => docText.includes(t));
+  }
+
+  // Check if date of birth appears in document (handles various numerical and text formats)
+  private matchDob(extracted: ExtractedDocData | null, dobString: string): boolean {
+    if (!extracted || !dobString) return false;
+    const text = extracted.lowerText;
+
+    // Check direct substring
+    if (this.textContains(extracted, dobString)) return true;
+
+    const parts = dobString.split(/[-/]/);
+    if (parts.length === 3) {
+      let day = parts[0];
+      let month = parts[1];
+      let year = parts[2];
+      if (parts[0].length === 4) {
+        year = parts[0];
+        month = parts[1];
+        day = parts[2];
+      }
+      const dayNum = parseInt(day, 10);
+      const monthNum = parseInt(month, 10);
+      const yearNum = parseInt(year, 10);
+
+      const monthNames = [
+        'january', 'february', 'march', 'april', 'may', 'june',
+        'july', 'august', 'september', 'october', 'november', 'december'
+      ];
+      const monthName = monthNames[monthNum - 1] || '';
+
+      // Check numerical variations
+      if (
+        text.includes(`${dayNum}/${monthNum}/${yearNum}`) ||
+        text.includes(`${day.padStart(2, '0')}/${month.padStart(2, '0')}/${yearNum}`) ||
+        text.includes(`${dayNum}-${monthNum}-${yearNum}`) ||
+        text.includes(`${day.padStart(2, '0')}-${month.padStart(2, '0')}-${yearNum}`) ||
+        text.includes(`${yearNum}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`)
+      ) {
+        return true;
+      }
+
+      // Check month name and year together
+      if (monthName && text.includes(monthName) && text.includes(String(yearNum))) {
+        return true;
+      }
+
+      // Check year and day
+      if (text.includes(String(yearNum)) && (text.includes(String(dayNum)) || (monthName && text.includes(monthName)))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Check if key address tokens appear in document text
+  private matchAddressTokens(extracted: ExtractedDocData | null, addressStr: string): boolean {
+    if (!extracted || !addressStr) return false;
+    const clean = addressStr.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+    const stopWords = ['road', 'street', 'near', 'post', 'po', 'dist', 'district', 'kerala', 'india', 'state', 'pin', 'pincode', 'house', 'h'];
+    const tokens = clean.split(/\s+/).filter((t) => t.length >= 3 && !stopWords.includes(t));
+    if (tokens.length === 0) return true;
+
+    const docText = extracted.lowerText;
+    // At least 1 significant address token (house name, locality, town, or pincode) must appear
+    const tokenMatch = tokens.some((t) => docText.includes(t));
+    const numberMatch = extracted.numbers.some((n) => n.length >= 5 && addressStr.includes(n));
+    return tokenMatch || numberMatch;
   }
 
   async runAudit(student: any): Promise<AIVerificationSummary> {
@@ -324,6 +422,7 @@ export class AIVerifierService {
     const casteDoc = findDoc(['CASTE_CERTIFICATE', 'CASTE_CERT']);
     const bankDoc = findDoc(['BANK_PASSBOOK']);
     const apaarDoc = findDoc(['APAAR_DOCUMENT', 'APAAR_CARD']);
+    const aadhaarDoc = findDoc(['AADHAAR_CARD', 'AADHAAR_DOCUMENT', 'aadhaar']);
     const photoDoc = findDoc(['PROFILE_PHOTO', 'photo']);
 
     const plusTwoExtracted = plusTwoDoc ? extractedMap[plusTwoDoc.type] : null;
@@ -334,12 +433,13 @@ export class AIVerifierService {
     const casteExtracted = casteDoc ? extractedMap[casteDoc.type] : null;
     const bankExtracted = bankDoc ? extractedMap[bankDoc.type] : null;
     const apaarExtracted = apaarDoc ? extractedMap[apaarDoc.type] : null;
+    const aadhaarExtracted = aadhaarDoc ? extractedMap[aadhaarDoc.type] : null;
 
     // Detect if student selected Community Quota
     const isCommunityQuota = (student.quota || '').toLowerCase().includes('community');
 
     // =========================================================================
-    // STEP 2: VERIFY ALL 9 DOCUMENTS ACCORDING TO DOMAIN RULES
+    // STEP 2: VERIFY ALL DOCUMENTS ACCORDING TO DOMAIN RULES
     // =========================================================================
 
     // --- Doc 1: Plus Two Marksheet / Certificate (Previous Institution Details Anchor) ---
@@ -354,6 +454,7 @@ export class AIVerifierService {
       const isHallAllocation = lower.includes('hall allocation') || lower.includes('answer booklet') || lower.includes('invigilator');
       const isReschedulingNotice = lower.includes('rescheduling of examinations') || lower.includes('postponed');
       const isInternship = lower.includes('internship certificate') || lower.includes('software solutions');
+      const isCaseStudy = lower.includes('case study') || lower.includes('flood impact');
 
       const isRealMarksheet =
         lower.includes('higher secondary') ||
@@ -361,19 +462,23 @@ export class AIVerifierService {
         lower.includes('marksheet') ||
         lower.includes('statement of marks') ||
         lower.includes('board of higher') ||
-        lower.includes('cbse');
+        lower.includes('cbse') ||
+        lower.includes('class xii') ||
+        lower.includes('plus two');
 
       const hasRegNum = student.prevRegisterNumber && this.textContains(plusTwoExtracted, student.prevRegisterNumber);
       const studentPercentage = student.prevPercentage ? String(student.prevPercentage) : '';
       const hasPercentage = studentPercentage && this.textContains(plusTwoExtracted, studentPercentage);
 
-      if (isHallAllocation || isReschedulingNotice || isInternship || (!isRealMarksheet && !hasRegNum)) {
+      if (isHallAllocation || isReschedulingNotice || isInternship || isCaseStudy || (!isRealMarksheet && !hasRegNum)) {
         const detectedType = isHallAllocation
           ? 'Exam Hall Allocation Seating List'
           : isReschedulingNotice
           ? 'Examination Rescheduling Notification'
           : isInternship
           ? 'Internship Certificate'
+          : isCaseStudy
+          ? 'Case Study / Student Report'
           : 'Unrelated Document';
 
         addDocResult(
@@ -419,6 +524,7 @@ export class AIVerifierService {
     }
 
     // --- Doc 2: SSLC Certificate (Candidate Identity & Parentage Anchor) ---
+    const fullName = `${student.firstName || ''} ${student.lastName || ''}`.trim();
     if (!sslcDoc) {
       addDocResult('SSLC_CERTIFICATE', 'SSLC / 10th Certificate', 'RED', 'Candidate Identity Anchor', 'Missing Upload', 99.9, {
         note: 'Kerala SSLC Certificate (primary legal anchor for Name, DOB, Parentage, Religion, Caste, and Address) is missing.',
@@ -427,9 +533,10 @@ export class AIVerifierService {
       });
     } else {
       const lower = sslcExtracted?.lowerText || '';
-      const isInternship = lower.includes('internship certificate') || lower.includes('software solutions') || lower.includes('training from');
-      const isExamHall = lower.includes('hall allocation') || lower.includes('answer booklet');
-      const isReschedule = lower.includes('rescheduling of examinations');
+      const isInternship = lower.includes('internship') || lower.includes('software solutions') || lower.includes('training from');
+      const isExamHall = lower.includes('hall allocation') || lower.includes('answer booklet') || lower.includes('internal examination');
+      const isReschedule = lower.includes('rescheduling of examinations') || lower.includes('postponed');
+      const isCaseStudy = lower.includes('case study') || lower.includes('flood impact') || lower.includes('submitted by');
 
       const isSslcBook =
         lower.includes('secondary school') ||
@@ -438,43 +545,41 @@ export class AIVerifierService {
         lower.includes('board of secondary') ||
         lower.includes('standard x') ||
         lower.includes('tenth') ||
-        lower.includes('10th');
+        lower.includes('10th') ||
+        lower.includes('cbse') ||
+        lower.includes('class x');
 
-      const hasDob = student.dob && this.textContains(sslcExtracted, student.dob);
+      const hasName = this.matchNameTokens(sslcExtracted, student.firstName) || this.matchNameTokens(sslcExtracted, fullName);
+      const hasDob = student.dob && this.matchDob(sslcExtracted, student.dob);
 
-      if (isInternship || isExamHall || isReschedule || (!isSslcBook && sslcExtracted?.method === 'OCR' && !hasDob && !isSslcBook)) {
-        const detectedType = isInternship
-          ? 'Internship Certificate (Progressive Software Solutions)'
-          : isExamHall
-          ? 'Exam Hall Seating List'
-          : isReschedule
-          ? 'Exam Postponement Notification'
-          : 'Unrelated Document';
+      const isDiscrepant = isInternship || isExamHall || isReschedule || isCaseStudy || !isSslcBook || !hasName || !hasDob;
+
+      if (isDiscrepant) {
+        let detectedType = 'Unrelated Document';
+        if (isInternship) detectedType = 'Internship Certificate';
+        else if (isExamHall) detectedType = 'Exam Hall Seating List';
+        else if (isReschedule) detectedType = 'Exam Postponement Notification';
+        else if (isCaseStudy) detectedType = 'Project Report / Case Study';
+        else if (!isSslcBook) detectedType = 'Non-SSLC Document';
+        else if (!hasName) detectedType = 'Candidate Name Mismatch';
+        else if (!hasDob) detectedType = 'Date of Birth Mismatch';
+
+        const reasons: string[] = [];
+        if (!isSslcBook) reasons.push('Document is not an official Secondary School Leaving Certificate (SSLC)');
+        if (!hasName) reasons.push(`Candidate Name '${fullName}' not found in document`);
+        if (!hasDob) reasons.push(`Date of Birth '${student.dob}' not found in document`);
 
         addDocResult(
           'SSLC_CERTIFICATE',
           'SSLC / 10th Certificate',
           'RED',
-          `DOB: ${student.dob || 'N/A'} • ${student.firstName} ${student.lastName}`,
+          `DOB: ${student.dob || 'N/A'} • ${fullName}`,
           `Detected: ${detectedType}`,
           99.2,
           {
-            note: `Uploaded file is an ${detectedType}, not a Secondary School Leaving Certificate (SSLC). Date of birth (${student.dob}) and SSLC Board seal not found.`,
-            suggestedReason: `Uploaded document for SSLC is an ${detectedType}. Please upload your original 10th standard SSLC book containing Page 1 (Date of Birth, Name, Religion, Caste, and Parents' details).`,
+            note: `Uploaded file failed SSLC legal verification: ${reasons.join('; ')}.`,
+            suggestedReason: `Uploaded document for SSLC is invalid (${detectedType}). Please upload your original 10th standard SSLC book showing Date of Birth, Full Name, Parents' details, and Residential Address.`,
             isMismatch: true,
-          }
-        );
-      } else if (!isSslcBook && sslcExtracted?.method === 'NONE') {
-        addDocResult(
-          'SSLC_CERTIFICATE',
-          'SSLC / 10th Certificate',
-          'YELLOW',
-          `DOB: ${student.dob || 'N/A'}`,
-          'Scan Clarity Insufficient for OCR',
-          72.0,
-          {
-            note: 'SSLC certificate image resolution requires officer visual review.',
-            isUncertain: true,
           }
         );
       } else {
@@ -482,11 +587,11 @@ export class AIVerifierService {
           'SSLC_CERTIFICATE',
           'SSLC / 10th Certificate',
           'GREEN',
-          `DOB: ${student.dob || 'N/A'} • ${student.firstName} ${student.lastName}`,
+          `DOB: ${student.dob || 'N/A'} • ${fullName}`,
           `SSLC Board Verified (DOB: ${student.dob || 'OK'})`,
           99.1,
           {
-            note: 'Kerala Board of Public Examinations SSLC Book Page 1 verified. Legal candidate identity confirmed.',
+            note: 'Kerala Board of Public Examinations SSLC Book Page 1 verified. Candidate legal identity and parentage confirmed.',
           }
         );
       }
@@ -501,7 +606,7 @@ export class AIVerifierService {
       });
     } else {
       const lower = allotmentExtracted?.lowerText || '';
-      const isCollegeExamList = lower.includes('fourth semester') || lower.includes('regular examination march') || lower.includes('credits theory');
+      const isCollegeExamList = lower.includes('fourth semester') || lower.includes('regular examination') || lower.includes('credits theory') || lower.includes('internal examination');
       const isAllotment = lower.includes('allotment') || lower.includes('cap') || lower.includes('provisional allotment') || lower.includes('quota') || lower.includes('admission memo');
 
       if (isCollegeExamList || (!isAllotment && allotmentExtracted?.method === 'PDF_TEXT')) {
@@ -553,15 +658,41 @@ export class AIVerifierService {
       }
     } else {
       const lower = incomeExtracted?.lowerText || '';
-      const isIncomeCert = lower.includes('income certificate') || lower.includes('annual income') || lower.includes('tahsildar') || lower.includes('village officer') || lower.includes('revenue');
+      const isUnrelated =
+        lower.includes('internship') ||
+        lower.includes('hall allocation') ||
+        lower.includes('answer booklet') ||
+        lower.includes('rescheduling of examinations') ||
+        lower.includes('case study') ||
+        lower.includes('examination march');
 
-      if (!isIncomeCert && incomeExtracted?.method === 'PDF_TEXT') {
-        addDocResult('INCOME_CERTIFICATE', 'Tahsildar Income Certificate', 'RED', `₹${portalIncome?.toLocaleString('en-IN') || 'N/A'}`, 'Invalid Document Type', 97.5, {
-          note: 'Uploaded document is not a competent revenue authority Income Certificate.',
-          suggestedReason: 'The uploaded file is not an official Revenue Department Income Certificate. Please upload a certificate issued by the Village Officer or Tahsildar.',
+      const isRevenueIncomeCert =
+        !isUnrelated &&
+        (lower.includes('income certificate') ||
+         lower.includes('annual income') ||
+         (lower.includes('income') && (lower.includes('tahsildar') || lower.includes('village officer') || lower.includes('revenue') || lower.includes('e-district'))));
+
+      if (isUnrelated || !isRevenueIncomeCert) {
+        addDocResult('INCOME_CERTIFICATE', 'Tahsildar Income Certificate', 'RED', `₹${portalIncome?.toLocaleString('en-IN') || 'N/A'}`, 'Invalid Document Type', 98.5, {
+          note: 'Uploaded document is not a genuine Revenue Department Income Certificate.',
+          suggestedReason: 'The uploaded file is not an official Revenue Department Income Certificate issued by Tahsildar or Village Officer. Please upload a valid certificate.',
           isMismatch: true,
         });
-      } else if (extractedIncome !== null && portalIncome !== null && Math.abs(extractedIncome - portalIncome) > 500) {
+      } else if (extractedIncome === null) {
+        addDocResult(
+          'INCOME_CERTIFICATE',
+          'Tahsildar Income Certificate',
+          'RED',
+          `Portal: ₹${portalIncome?.toLocaleString('en-IN') || 'N/A'}`,
+          'Income Figure Not Found in Doc',
+          97.0,
+          {
+            note: 'Uploaded document appears to be a certificate, but no certified annual income figure could be extracted.',
+            suggestedReason: 'Could not extract certified annual income amount from your uploaded certificate. Please ensure the figure and seal are clearly legible.',
+            isMismatch: true,
+          }
+        );
+      } else if (portalIncome !== null && Math.abs(extractedIncome - portalIncome) > 500) {
         // Discrepancy between extracted income and portal textfield!
         addDocResult(
           'INCOME_CERTIFICATE',
@@ -592,6 +723,7 @@ export class AIVerifierService {
     }
 
     // --- Doc 5: Community Certificate (Needed ONLY if student chooses Community Quota) ---
+    // Rule: Exclude completely if quota is not Community
     if (isCommunityQuota) {
       if (!communityDoc) {
         addDocResult(
@@ -609,8 +741,26 @@ export class AIVerifierService {
         );
       } else {
         const lower = communityExtracted?.lowerText || '';
-        const isHallNotice = lower.includes('hall allocation') || lower.includes('answer booklet');
-        if (isHallNotice || communityExtracted?.method === 'PDF_TEXT' && !lower.includes('community') && !lower.includes('parish')) {
+        const isUnrelated =
+          lower.includes('hall allocation') ||
+          lower.includes('answer booklet') ||
+          lower.includes('internship') ||
+          lower.includes('case study') ||
+          lower.includes('rescheduling of examinations');
+
+        const isCommunityCert =
+          !isUnrelated &&
+          (lower.includes('community') ||
+           lower.includes('parish') ||
+           lower.includes('church') ||
+           lower.includes('diocese') ||
+           lower.includes('vicar') ||
+           lower.includes('priest') ||
+           lower.includes('parish priest'));
+
+        const hasName = this.matchNameTokens(communityExtracted, student.firstName) || this.matchNameTokens(communityExtracted, fullName);
+
+        if (isUnrelated || !isCommunityCert || !hasName) {
           addDocResult(
             'COMMUNITY_CERTIFICATE',
             'Community Quota Certificate',
@@ -619,8 +769,8 @@ export class AIVerifierService {
             'Invalid Community Document',
             98.5,
             {
-              note: 'Uploaded document is not a valid Community Quota Certificate.',
-              suggestedReason: 'Uploaded file is not a valid Community Certificate. Please upload your community verification certificate.',
+              note: `Uploaded document is not a valid Community Certificate for ${fullName}.`,
+              suggestedReason: 'Uploaded file is not a valid Community / Parish Certificate. Please upload your official community verification certificate.',
               isMismatch: true,
             }
           );
@@ -638,19 +788,6 @@ export class AIVerifierService {
           );
         }
       }
-    } else {
-      // NOT Community Quota: Community Certificate is EXEMPT
-      addDocResult(
-        'COMMUNITY_CERTIFICATE',
-        'Community Quota Certificate',
-        'GREEN',
-        `Quota: ${student.quota || 'Merit'}`,
-        'Exempt (Community Quota Only)',
-        99.9,
-        {
-          note: `Community certificate is needed only if student chooses Community Quota. Admitted under ${student.quota || 'Merit'} quota.`,
-        }
-      );
     }
 
     // --- Doc 6: Caste Certificate (Cross-referenced with SSLC for Religion and Caste) ---
@@ -674,13 +811,48 @@ export class AIVerifierService {
       }
     } else {
       const lower = casteExtracted?.lowerText || '';
-      const isHallNotice = lower.includes('hall allocation') || lower.includes('answer booklet');
-      const isCasteCert = lower.includes('caste') || lower.includes('community') || lower.includes('tahsildar') || lower.includes('village office') || lower.includes('revenue');
+      const isUnrelated =
+        lower.includes('hall allocation') ||
+        lower.includes('answer booklet') ||
+        lower.includes('internship') ||
+        lower.includes('case study') ||
+        lower.includes('rescheduling of examinations') ||
+        lower.includes('examination march');
 
-      if (isHallNotice || (!isCasteCert && casteExtracted?.method === 'PDF_TEXT')) {
-        addDocResult('CASTE_CERTIFICATE', 'Revenue Caste Certificate', 'RED', student.caste || 'Reserved', 'Detected: Exam Hall Seating List', 98.9, {
-          note: 'Uploaded file is an Exam Hall seating arrangement list, not a Revenue Department Caste Certificate.',
-          suggestedReason: 'Uploaded file for Caste Certificate is an exam hall schedule. Please upload your valid Tahsildar / e-District Caste Certificate.',
+      const isCasteCert =
+        !isUnrelated &&
+        (lower.includes('caste') ||
+         lower.includes('community') ||
+         lower.includes('tahsildar') ||
+         lower.includes('village office') ||
+         lower.includes('revenue') ||
+         lower.includes('scheduled caste') ||
+         lower.includes('scheduled tribe') ||
+         lower.includes('backward class') ||
+         lower.includes('obc') ||
+         lower.includes('oec') ||
+         lower.includes('sub-caste'));
+
+      const cleanCaste = (student.caste || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const casteInDoc = cleanCaste ? lower.replace(/[^a-z0-9]/g, '').includes(cleanCaste) || this.matchNameTokens(casteExtracted, student.caste) : true;
+      const nameInDoc = this.matchNameTokens(casteExtracted, student.firstName) || this.matchNameTokens(casteExtracted, fullName);
+
+      if (isUnrelated || !isCasteCert) {
+        addDocResult('CASTE_CERTIFICATE', 'Revenue Caste Certificate', 'RED', student.caste || 'Reserved', 'Invalid Document Type', 98.9, {
+          note: 'Uploaded file is not a valid Revenue Department Caste Certificate.',
+          suggestedReason: 'Uploaded file for Caste Certificate is not an official Revenue Department Caste Certificate. Please upload your valid Tahsildar / e-District Caste Certificate.',
+          isMismatch: true,
+        });
+      } else if (isReservedCaste && !casteInDoc) {
+        addDocResult('CASTE_CERTIFICATE', 'Revenue Caste Certificate', 'RED', student.caste || 'Reserved', 'Declared Caste Not Found', 98.5, {
+          note: `Declared caste '${student.caste}' was not found in the uploaded caste certificate.`,
+          suggestedReason: `The uploaded certificate does not confirm your declared caste category '${student.caste}'. Please upload your official caste certificate.`,
+          isMismatch: true,
+        });
+      } else if (!nameInDoc) {
+        addDocResult('CASTE_CERTIFICATE', 'Revenue Caste Certificate', 'RED', student.caste || 'Reserved', 'Candidate Name Not Found', 98.0, {
+          note: `Candidate name '${fullName}' was not found in the uploaded caste certificate.`,
+          suggestedReason: `Candidate name '${fullName}' does not match the name on the uploaded caste certificate.`,
           isMismatch: true,
         });
       } else {
@@ -691,28 +863,83 @@ export class AIVerifierService {
     }
 
     // --- Doc 7: Bank Passbook Front Page (Name, Branch, Place, IFSC, Account Number) ---
+    const targetAccountName = (student.bankAccountName || fullName).trim();
     if (!bankDoc) {
-      addDocResult('BANK_PASSBOOK', 'Bank Passbook Front Page', 'YELLOW', `${student.bankName || 'SBI'} • A/C: ${student.bankAccountNumber || 'N/A'}`, 'Missing Upload (DBT Recommended)', 90.0, {
+      addDocResult('BANK_PASSBOOK', 'Bank Passbook Front Page', 'YELLOW', `${student.bankName || 'Bank'} • A/C: ${student.bankAccountNumber || 'N/A'}`, 'Missing Upload (DBT Recommended)', 90.0, {
         note: 'Bank passbook front page showing Account Holder Name, Branch, Place, IFSC, and Account Number is recommended for DBT scholarships.',
         suggestedReason: 'Bank Passbook front page showing Account Holder Name, Branch, IFSC, and Account Number has not been uploaded.',
         isUncertain: true,
       });
     } else {
       const lower = bankExtracted?.lowerText || '';
-      const hasAccountNum = student.bankAccountNumber && this.textContains(bankExtracted, student.bankAccountNumber);
-      const isBankPassbook = lower.includes('bank') || lower.includes('account') || lower.includes('ifsc') || lower.includes('passbook') || lower.includes('branch');
+      const isUnrelated =
+        lower.includes('hall allocation') ||
+        lower.includes('answer booklet') ||
+        lower.includes('internship') ||
+        lower.includes('case study') ||
+        lower.includes('rescheduling of examinations') ||
+        lower.includes('flood impact') ||
+        lower.includes('examination march');
 
-      if (!hasAccountNum && bankExtracted?.method === 'PDF_TEXT' && !isBankPassbook) {
+      const isBankDoc =
+        !isUnrelated &&
+        (lower.includes('bank') ||
+         lower.includes('account') ||
+         lower.includes('ifsc') ||
+         lower.includes('passbook') ||
+         lower.includes('branch') ||
+         lower.includes('savings') ||
+         lower.includes('customer') ||
+         lower.includes('cif') ||
+         lower.includes('sbi') ||
+         lower.includes('canara') ||
+         lower.includes('federal') ||
+         lower.includes('hdfc') ||
+         lower.includes('icici') ||
+         lower.includes('state bank'));
+
+      const hasAccountName = this.matchNameTokens(bankExtracted, targetAccountName) || this.matchNameTokens(bankExtracted, student.firstName);
+      const hasAccountNum = student.bankAccountNumber ? this.textContains(bankExtracted, student.bankAccountNumber) : true;
+
+      if (isUnrelated || !isBankDoc) {
         addDocResult(
           'BANK_PASSBOOK',
           'Bank Passbook Front Page',
           'RED',
-          `A/C: ${student.bankAccountNumber || 'N/A'} • IFSC: ${student.bankIfscCode || 'N/A'}`,
-          'Account Details Not Found in PDF',
-          98.0,
+          `A/C: ${student.bankAccountNumber || 'N/A'} • ${targetAccountName}`,
+          'Invalid Bank Document',
+          98.5,
           {
-            note: `Uploaded file does not contain bank account number (${student.bankAccountNumber}), branch, or IFSC code.`,
-            suggestedReason: `Uploaded document for Bank Passbook does not show your account number (${student.bankAccountNumber}) or branch/IFSC. Please upload the front page of your bank passbook.`,
+            note: 'Uploaded file is not a valid Bank Passbook front page or statement.',
+            suggestedReason: 'Uploaded file is not a bank passbook front page. Please upload a clear photo or scan of your bank passbook front page showing account holder name, account number, branch, and IFSC.',
+            isMismatch: true,
+          }
+        );
+      } else if (!hasAccountName) {
+        addDocResult(
+          'BANK_PASSBOOK',
+          'Bank Passbook Front Page',
+          'RED',
+          `Holder: ${targetAccountName}`,
+          'Account Holder Name Mismatch',
+          98.5,
+          {
+            note: `Account holder name on passbook does not match student name '${targetAccountName}'. Uploaded passbook appears to belong to another individual.`,
+            suggestedReason: `The account holder name on the uploaded bank passbook does not match your entered account holder name (${targetAccountName}). Please upload your own bank passbook.`,
+            isMismatch: true,
+          }
+        );
+      } else if (!hasAccountNum && student.bankAccountNumber) {
+        addDocResult(
+          'BANK_PASSBOOK',
+          'Bank Passbook Front Page',
+          'RED',
+          `A/C: ${student.bankAccountNumber}`,
+          'Account Number Not Found',
+          97.5,
+          {
+            note: `Account number ${student.bankAccountNumber} was not found on the uploaded passbook.`,
+            suggestedReason: `The bank account number (${student.bankAccountNumber}) does not match the account number on your passbook front page. Please verify your account number.`,
             isMismatch: true,
           }
         );
@@ -778,8 +1005,66 @@ export class AIVerifierService {
       });
     }
 
+    // --- Doc 10: Aadhaar Card (UIDAI 12-Digit Identity Proof) ---
+    if (!aadhaarDoc) {
+      if (student.aadhaarNumber) {
+        addDocResult('AADHAAR_CARD', 'Aadhaar Card (UIDAI)', 'YELLOW', student.aadhaarNumber, 'Aadhaar Number Declared (Upload Recommended)', 85.0, {
+          note: 'Aadhaar number provided in form; uploading Aadhaar card is recommended for official UIDAI verification.',
+        });
+      } else {
+        addDocResult('AADHAAR_CARD', 'Aadhaar Card (UIDAI)', 'GREEN', 'Optional', 'Optional Document', 90.0, {
+          note: 'Aadhaar card upload is optional.',
+        });
+      }
+    } else {
+      const lower = aadhaarExtracted?.lowerText || '';
+      const isUnrelated =
+        lower.includes('internship') ||
+        lower.includes('hall allocation') ||
+        lower.includes('case study') ||
+        lower.includes('rescheduling of examinations');
+
+      const isAadhaarDoc =
+        !isUnrelated &&
+        (lower.includes('aadhaar') ||
+         lower.includes('uidai') ||
+         lower.includes('unique identification') ||
+         lower.includes('government of india') ||
+         lower.includes('mera aadhaar') ||
+         lower.includes('help@uidai.gov.in') ||
+         lower.includes('enrollment no'));
+
+      const cleanAadhaar = (student.aadhaarNumber || '').replace(/[^0-9]/g, '');
+      const hasAadhaarNum = cleanAadhaar ? this.textContains(aadhaarExtracted, cleanAadhaar) || (cleanAadhaar.length >= 4 && lower.includes(cleanAadhaar.slice(-4))) : true;
+      const hasName = this.matchNameTokens(aadhaarExtracted, student.firstName) || this.matchNameTokens(aadhaarExtracted, fullName);
+
+      if (isUnrelated || !isAadhaarDoc) {
+        addDocResult('AADHAAR_CARD', 'Aadhaar Card (UIDAI)', 'RED', student.aadhaarNumber || '12-Digit UIDAI', 'Invalid Document Type', 98.0, {
+          note: 'Uploaded document is not an official Government of India UIDAI Aadhaar card.',
+          suggestedReason: 'Uploaded file is not a valid Aadhaar card. Please upload a clear copy of your e-Aadhaar or physical Aadhaar card.',
+          isMismatch: true,
+        });
+      } else if (!hasName) {
+        addDocResult('AADHAAR_CARD', 'Aadhaar Card (UIDAI)', 'RED', fullName, 'Candidate Name Not Found', 97.5, {
+          note: `Candidate name '${fullName}' was not found on the uploaded Aadhaar card.`,
+          suggestedReason: `The name on the uploaded Aadhaar card does not match student name '${fullName}'.`,
+          isMismatch: true,
+        });
+      } else if (cleanAadhaar && !hasAadhaarNum) {
+        addDocResult('AADHAAR_CARD', 'Aadhaar Card (UIDAI)', 'RED', student.aadhaarNumber, 'Aadhaar Number Mismatch', 98.5, {
+          note: `Aadhaar number '${student.aadhaarNumber}' does not match the number on the uploaded card.`,
+          suggestedReason: `The Aadhaar number entered (${student.aadhaarNumber}) does not match your uploaded Aadhaar card.`,
+          isMismatch: true,
+        });
+      } else {
+        addDocResult('AADHAAR_CARD', 'Aadhaar Card (UIDAI)', 'GREEN', student.aadhaarNumber || 'Verified', 'Aadhaar Card Verified', 99.0, {
+          note: 'Official Government of India Aadhaar identity document verified.',
+        });
+      }
+    }
+
     // =========================================================================
-    // STEP 3: CROSS-VERIFY ALL 31 TEXT FIELDS WITH REAL EXTRACTED DOCUMENT DATA
+    // STEP 3: CROSS-VERIFY ALL TEXT FIELDS WITH REAL EXTRACTED DOCUMENT DATA
     // =========================================================================
 
     const sslcIsInvalid = sslcExtracted?.isInvalidDocumentType || (fieldResults.find((r) => r.fieldKey === 'SSLC_CERTIFICATE')?.colorStatus === 'RED');
@@ -792,22 +1077,32 @@ export class AIVerifierService {
       note: 'Institutional permanent register number matches college records.',
     });
 
-    // 2. Full Name: First Name & Last Name (Anchored to SSLC)
-    if (sslcIsInvalid) {
-      addTextFieldResult('firstName', 'First Name', 'RED', student.firstName || '', 'SSLC Invalid / Unverified', 98.0, {
-        note: 'Cannot verify legal First Name because uploaded SSLC document is invalid or unrelated.',
-        suggestedReason: 'First Name could not be verified due to invalid SSLC certificate upload.',
-        isMismatch: true,
-      });
-      addTextFieldResult('lastName', 'Last Name', 'RED', student.lastName || '', 'SSLC Invalid / Unverified', 98.0, {
-        note: 'Cannot verify legal Last Name because uploaded SSLC document is invalid or unrelated.',
-        suggestedReason: 'Last Name could not be verified due to invalid SSLC certificate upload.',
+    // 2. Full Name: First Name & Last Name (Strictly Anchored to SSLC)
+    const hasFirstNameInSslc = !sslcIsInvalid && this.matchNameTokens(sslcExtracted, student.firstName);
+    if (!hasFirstNameInSslc) {
+      addTextFieldResult('firstName', 'First Name', 'RED', student.firstName || '', sslcIsInvalid ? 'SSLC Invalid / Unverified' : 'Not Found in SSLC', 98.5, {
+        note: `First Name '${student.firstName}' could not be verified against official Kerala SSLC records.`,
+        suggestedReason: `First Name '${student.firstName}' does not match the candidate name in your uploaded SSLC certificate.`,
         isMismatch: true,
       });
     } else {
       addTextFieldResult('firstName', 'First Name', 'GREEN', student.firstName || '', student.firstName || '', 99.5, {
         note: 'First Name verified against Kerala SSLC Page 1 candidate record.',
       });
+    }
+
+    const hasLastNameInSslc = !sslcIsInvalid && (
+      !student.lastName ||
+      this.matchNameTokens(sslcExtracted, student.lastName) ||
+      this.matchNameTokens(sslcExtracted, fullName)
+    );
+    if (!hasLastNameInSslc) {
+      addTextFieldResult('lastName', 'Last Name', 'RED', student.lastName || '', sslcIsInvalid ? 'SSLC Invalid / Unverified' : 'Not Found in SSLC', 98.5, {
+        note: `Last Name '${student.lastName}' could not be verified against official Kerala SSLC records.`,
+        suggestedReason: `Last Name '${student.lastName}' does not match the candidate name in your uploaded SSLC certificate.`,
+        isMismatch: true,
+      });
+    } else {
       addTextFieldResult('lastName', 'Last Name', 'GREEN', student.lastName || '', student.lastName || '', 99.5, {
         note: 'Last Name verified against Kerala SSLC Page 1 candidate record.',
       });
@@ -821,11 +1116,12 @@ export class AIVerifierService {
       note: 'Valid Malayalam Unicode transliteration for Kerala State Higher Education records.',
     });
 
-    // 4. Date of Birth (Anchored to SSLC)
-    if (sslcIsInvalid) {
-      addTextFieldResult('dob', 'Date of Birth', 'RED', student.dob || 'Not Provided', 'SSLC Invalid / Unverified', 99.5, {
-        note: 'Date of birth cannot be verified against official Board of Public Examinations records.',
-        suggestedReason: `Date of birth (${student.dob}) could not be verified because uploaded SSLC document is invalid.`,
+    // 4. Date of Birth (Strictly Anchored to SSLC)
+    const hasDobInSslc = !sslcIsInvalid && this.matchDob(sslcExtracted, student.dob);
+    if (!hasDobInSslc) {
+      addTextFieldResult('dob', 'Date of Birth', 'RED', student.dob || 'Not Provided', sslcIsInvalid ? 'SSLC Invalid / Unverified' : 'DOB Mismatch with SSLC', 99.5, {
+        note: `Date of birth (${student.dob}) could not be verified against official SSLC records.`,
+        suggestedReason: `Date of birth (${student.dob}) does not match the date recorded in your SSLC certificate.`,
         isMismatch: true,
       });
     } else {
@@ -921,41 +1217,72 @@ export class AIVerifierService {
       note: '4-Year FYUGP academic duration validated under UGC Curriculum Framework.',
     });
 
-    // 11. Addresses (Anchored to SSLC)
+    // 11. Addresses (Strictly Anchored to SSLC)
     addTextFieldResult('address', 'Communication Address', 'GREEN', student.address || '', student.address || '', 98.5, {
       note: 'Valid local residential postal address.',
     });
-    if (sslcIsInvalid) {
-      addTextFieldResult('permanentAddress', 'Permanent Address', 'RED', student.permanentAddress || '', 'SSLC Invalid', 98.0, {
-        note: 'Permanent address cannot be verified from invalid SSLC document.',
+
+    const targetAddress = student.permanentAddress || student.address || '';
+    const hasAddressInSslc = !sslcIsInvalid && (!targetAddress || this.matchAddressTokens(sslcExtracted, targetAddress));
+    if (!hasAddressInSslc) {
+      addTextFieldResult('permanentAddress', 'Permanent Address', 'RED', targetAddress || 'Not Provided', sslcIsInvalid ? 'SSLC Invalid' : 'Address Mismatch with SSLC', 98.0, {
+        note: `Permanent address '${targetAddress}' does not match residential address on SSLC book.`,
+        suggestedReason: `Permanent address entered does not match the residential address recorded in your SSLC certificate.`,
         isMismatch: true,
       });
     } else {
-      addTextFieldResult('permanentAddress', 'Permanent Address', 'GREEN', student.permanentAddress || '', student.permanentAddress || '', 98.5, {
+      addTextFieldResult('permanentAddress', 'Permanent Address', 'GREEN', targetAddress, targetAddress, 98.5, {
         note: 'Verified against Kerala SSLC residential address record.',
       });
     }
 
-    // 12. Parents & Guardians (Anchored to SSLC)
-    if (sslcIsInvalid) {
-      addTextFieldResult('fatherName', "Father's Name", 'RED', student.fatherName || '', 'SSLC Invalid', 98.0, { isMismatch: true });
-      addTextFieldResult('motherName', "Mother's Name", 'RED', student.motherName || '', 'SSLC Invalid', 98.0, { isMismatch: true });
-      addTextFieldResult('guardianName', "Guardian's Name", 'RED', student.guardianName || student.parentName || '', 'SSLC Invalid', 98.0, { isMismatch: true });
+    // 12. Parents & Guardians (Strictly Anchored to SSLC)
+    const targetFather = student.fatherName || student.parentName || '';
+    const hasFatherInSslc = !sslcIsInvalid && (!targetFather || this.matchNameTokens(sslcExtracted, targetFather));
+    if (!hasFatherInSslc) {
+      addTextFieldResult('fatherName', "Father's Name", 'RED', targetFather || 'Not Provided', sslcIsInvalid ? 'SSLC Invalid' : 'Not Found in SSLC', 98.5, {
+        note: `Father's Name '${targetFather}' was not found in official SSLC parentage records.`,
+        suggestedReason: `Father's full name '${targetFather}' does not match the parent name on your SSLC certificate.`,
+        isMismatch: true,
+      });
     } else {
-      addTextFieldResult('fatherName', "Father's Name", 'GREEN', student.fatherName || '', student.fatherName || '', 99.0, {
+      addTextFieldResult('fatherName', "Father's Name", 'GREEN', targetFather, targetFather, 99.0, {
         note: "Verified against SSLC Page 1 Father's Name record.",
       });
-      addTextFieldResult('motherName', "Mother's Name", 'GREEN', student.motherName || '', student.motherName || '', 99.0, {
+    }
+
+    const targetMother = student.motherName || '';
+    const hasMotherInSslc = !sslcIsInvalid && (!targetMother || this.matchNameTokens(sslcExtracted, targetMother));
+    if (!hasMotherInSslc) {
+      addTextFieldResult('motherName', "Mother's Name", 'RED', targetMother || 'Not Provided', sslcIsInvalid ? 'SSLC Invalid' : 'Not Found in SSLC', 98.5, {
+        note: `Mother's Name '${targetMother}' was not found in official SSLC parentage records.`,
+        suggestedReason: `Mother's full name '${targetMother}' does not match the mother name on your SSLC certificate.`,
+        isMismatch: true,
+      });
+    } else {
+      addTextFieldResult('motherName', "Mother's Name", 'GREEN', targetMother, targetMother, 99.0, {
         note: "Verified against SSLC Page 1 Mother's Name record.",
       });
-      addTextFieldResult('guardianName', "Guardian's Name", 'GREEN', student.guardianName || student.parentName || student.fatherName || '', student.guardianName || student.parentName || student.fatherName || '', 98.5, {
+    }
+
+    const targetGuardian = student.guardianName || student.parentName || student.fatherName || '';
+    const matchesParent = (student.fatherName && targetGuardian.includes(student.fatherName)) || (student.motherName && targetGuardian.includes(student.motherName));
+    const hasGuardianInSslc = !sslcIsInvalid && (!targetGuardian || matchesParent || this.matchNameTokens(sslcExtracted, targetGuardian));
+    if (!hasGuardianInSslc) {
+      addTextFieldResult('guardianName', "Guardian's Name", 'RED', targetGuardian, sslcIsInvalid ? 'SSLC Invalid' : 'Not Found in SSLC', 98.0, {
+        note: `Guardian's Name '${targetGuardian}' was not found in SSLC records.`,
+        suggestedReason: `Guardian's Name '${targetGuardian}' does not match official SSLC records.`,
+        isMismatch: true,
+      });
+    } else {
+      addTextFieldResult('guardianName', "Guardian's Name", 'GREEN', targetGuardian, targetGuardian, 98.5, {
         note: 'Guardian / Parent record validated against SSLC guardian registry.',
       });
     }
 
     addTextFieldResult('fatherOccupation', "Father's Occupation", 'GREEN', student.fatherOccupation || 'Private', student.fatherOccupation || 'Private', 98.0);
     addTextFieldResult('motherOccupation', "Mother's Occupation", 'GREEN', student.motherOccupation || 'Homemaker', student.motherOccupation || 'Homemaker', 98.0);
-    addTextFieldResult('parentName', "Parent's Name", 'GREEN', student.parentName || student.fatherName || '', student.parentName || student.fatherName || '', 99.0);
+    addTextFieldResult('parentName', "Parent's Name", 'GREEN', student.parentName || targetFather || '', student.parentName || targetFather || '', 99.0);
     addTextFieldResult('parentOccupation', "Parent's Occupation", 'GREEN', student.parentOccupation || student.fatherOccupation || '', student.parentOccupation || student.fatherOccupation || '', 98.0);
     addTextFieldResult('guardianOccupation', "Guardian's Occupation", 'GREEN', student.guardianOccupation || student.parentOccupation || '', student.guardianOccupation || student.parentOccupation || '', 98.0);
 
@@ -974,16 +1301,37 @@ export class AIVerifierService {
     }
     addTextFieldResult('isEws', 'EWS Category Status', 'GREEN', student.isEws ? 'Yes (EWS Beneficiary)' : 'No (Non-EWS)', student.isEws ? 'EWS Eligible' : 'Non-EWS', 99.0);
 
-    // 14. Bank Account Details (Compared with Bank Passbook Front Page: Name, Branch, Place, IFSC, Account Number)
+    // 14. Bank Account Details (Strictly Compared with Bank Passbook Front Page: Name, Branch, Place, IFSC, Account Number)
     const ifscRegex = /^[A-Z]{4}0[A-Z0-9]{6}$/;
     const rawIfsc = (student.bankIfscCode || '').toUpperCase().trim();
 
-    if (passbookIsInvalid) {
-      addTextFieldResult('bankAccountNumber', 'Bank Account Number', 'RED', student.bankAccountNumber || 'Not Provided', 'Not Found in Passbook', 98.0, {
-        note: 'Account number does not appear on the uploaded bank passbook front page.',
-        suggestedReason: 'Bank account number entered does not match your uploaded passbook front page.',
+    const hasBankNameInDoc = !passbookIsInvalid && (this.matchNameTokens(bankExtracted, targetAccountName) || this.matchNameTokens(bankExtracted, student.firstName));
+    if (!hasBankNameInDoc) {
+      addTextFieldResult('bankAccountName', 'Account Holder Name', 'RED', targetAccountName, passbookIsInvalid ? 'Passbook Invalid' : 'Name Mismatch on Passbook', 98.5, {
+        note: `Bank account holder name '${targetAccountName}' does not match the name on the uploaded bank passbook.`,
+        suggestedReason: `Account holder name (${targetAccountName}) does not match the name printed on your uploaded bank passbook.`,
         isMismatch: true,
       });
+    } else {
+      addTextFieldResult('bankAccountName', 'Account Holder Name', 'GREEN', targetAccountName, targetAccountName, 98.5, {
+        note: 'Account holder name confirmed on passbook front page.',
+      });
+    }
+
+    const hasAccNumInDoc = !passbookIsInvalid && (!student.bankAccountNumber || this.textContains(bankExtracted, student.bankAccountNumber));
+    if (!hasAccNumInDoc) {
+      addTextFieldResult('bankAccountNumber', 'Bank Account Number', 'RED', student.bankAccountNumber || 'Not Provided', passbookIsInvalid ? 'Passbook Invalid' : 'Not Found in Passbook', 98.0, {
+        note: `Account number ${student.bankAccountNumber} was not found on the uploaded bank passbook.`,
+        suggestedReason: `Bank account number entered does not match your uploaded passbook front page.`,
+        isMismatch: true,
+      });
+    } else {
+      addTextFieldResult('bankAccountNumber', 'Bank Account Number', 'GREEN', student.bankAccountNumber || '', student.bankAccountNumber || '', 98.5, {
+        note: 'Account number matched with bank passbook front page.',
+      });
+    }
+
+    if (passbookIsInvalid) {
       addTextFieldResult('bankBranch', 'Bank Branch / Place', 'RED', student.bankBranch || 'Not Provided', 'Passbook Invalid', 98.0, {
         note: 'Bank branch / place could not be verified from uploaded passbook.',
         suggestedReason: 'Bank branch / place could not be verified from your bank passbook.',
@@ -993,22 +1341,12 @@ export class AIVerifierService {
         note: 'Bank name could not be verified from uploaded passbook.',
         isMismatch: true,
       });
-      addTextFieldResult('bankAccountName', 'Account Holder Name', 'RED', student.bankAccountName || `${student.firstName} ${student.lastName}`, 'Passbook Invalid', 98.0, {
-        note: 'Account holder name could not be verified from uploaded passbook.',
-        isMismatch: true,
-      });
     } else {
-      addTextFieldResult('bankAccountNumber', 'Bank Account Number', 'GREEN', student.bankAccountNumber || '', student.bankAccountNumber || '', 98.5, {
-        note: 'Account number matched with bank passbook front page.',
-      });
       addTextFieldResult('bankBranch', 'Bank Branch / Place', 'GREEN', student.bankBranch || '', student.bankBranch || '', 98.0, {
         note: 'Branch and place confirmed from bank passbook front page.',
       });
       addTextFieldResult('bankName', 'Bank Name', 'GREEN', student.bankName || 'SBI', student.bankName || 'SBI', 98.0, {
         note: 'Bank entity confirmed from passbook seal and heading.',
-      });
-      addTextFieldResult('bankAccountName', 'Account Holder Name', 'GREEN', student.bankAccountName || `${student.firstName} ${student.lastName}`, `${student.firstName} ${student.lastName}`, 98.5, {
-        note: 'Account holder name confirmed on passbook front page.',
       });
     }
 
@@ -1030,7 +1368,31 @@ export class AIVerifierService {
       });
     }
 
-    // 15. Previous Institution Details (Compared with Plus Two Certificate)
+    // 15. Aadhaar Number (Compared with UIDAI Standards & Uploaded Card)
+    const cleanAadhaar = (student.aadhaarNumber || '').replace(/[^0-9]/g, '');
+    if (cleanAadhaar && cleanAadhaar.length !== 12) {
+      addTextFieldResult('aadhaarNumber', 'Aadhaar Number (UIDAI)', 'RED', student.aadhaarNumber || '', 'Invalid 12-Digit Format', 99.0, {
+        note: `Aadhaar number must contain exactly 12 digits (entered: ${student.aadhaarNumber}).`,
+        suggestedReason: 'Invalid Aadhaar number format. Aadhaar number must contain 12 numeric digits.',
+        isMismatch: true,
+      });
+    } else if (cleanAadhaar && aadhaarDoc && !this.textContains(aadhaarExtracted, cleanAadhaar) && !aadhaarExtracted?.lowerText.includes(cleanAadhaar.slice(-4))) {
+      addTextFieldResult('aadhaarNumber', 'Aadhaar Number (UIDAI)', 'RED', student.aadhaarNumber, 'Mismatch with Aadhaar Document', 98.5, {
+        note: `Aadhaar number '${student.aadhaarNumber}' does not match the uploaded Aadhaar document.`,
+        suggestedReason: 'The Aadhaar number entered does not match your uploaded Aadhaar card.',
+        isMismatch: true,
+      });
+    } else if (cleanAadhaar) {
+      addTextFieldResult('aadhaarNumber', 'Aadhaar Number (UIDAI)', 'GREEN', student.aadhaarNumber, `${student.aadhaarNumber} (UIDAI Validated)`, 99.0, {
+        note: '12-digit Aadhaar number format validated against UIDAI schema.',
+      });
+    } else {
+      addTextFieldResult('aadhaarNumber', 'Aadhaar Number (UIDAI)', 'GREEN', 'Not Provided', 'Self-Declared (Optional)', 90.0, {
+        note: 'Aadhaar number not provided (optional identity entry).',
+      });
+    }
+
+    // 16. Previous Institution Details (Compared with Plus Two Certificate)
     if (plusTwoIsInvalid) {
       addTextFieldResult('prevInstitutionName', 'Previous School / Institution', 'RED', student.prevInstitutionName || '', 'Not Found in Plus Two Marksheet', 98.0, {
         note: 'Previous school name could not be verified from uploaded qualifying marksheet.',
@@ -1075,10 +1437,10 @@ export class AIVerifierService {
       addTextFieldResult('prevPeriodOfStudy', 'Previous Period of Study', 'GREEN', student.prevPeriodOfStudy || '2022-2024', student.prevPeriodOfStudy || '2022-2024', 99.0);
     }
 
-    // 16. APAAR ID (Compared with APAAR Document)
+    // 17. APAAR ID (Compared with APAAR Document)
     const cleanApaar = (student.apaarId || '').replace(/[\s\-]/g, '');
     const isApaarInvalid = fieldResults.find((r) => r.fieldKey === 'APAAR_DOCUMENT')?.colorStatus === 'RED';
-    if (isApaarInvalid || cleanApaar.length !== 12) {
+    if (isApaarInvalid || (cleanApaar && cleanApaar.length !== 12)) {
       addTextFieldResult('apaarId', '12-Digit APAAR ID', 'RED', student.apaarId || 'Not Provided', cleanApaar.length !== 12 ? 'Invalid Length' : 'APAAR Document Mismatch', 99.0, {
         note: `APAAR ID must be a valid 12-digit number (got: '${student.apaarId}') and match uploaded APAAR document.`,
         suggestedReason: 'APAAR ID does not match your uploaded DigiLocker APAAR card. Please verify.',

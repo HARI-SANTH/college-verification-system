@@ -25,4 +25,5 @@ var DocumentType;
     DocumentType["COMMUNITY_CERTIFICATE"] = "COMMUNITY_CERTIFICATE";
     DocumentType["BANK_PASSBOOK"] = "BANK_PASSBOOK";
     DocumentType["APAAR_DOCUMENT"] = "APAAR_DOCUMENT";
+    DocumentType["AADHAAR_CARD"] = "AADHAAR_CARD";
 })(DocumentType || (exports.DocumentType = DocumentType = {}));

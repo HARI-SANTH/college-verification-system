@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { StudentProfile, StudentDocument } from '../../types';
 import { api } from '../../services/api';
 import {
@@ -651,8 +651,26 @@ export const VerificationWorkbench: React.FC<Props> = ({
     }
   };
 
+  // Filter visible document specs based on Quota (Hide Community Cert for non-community students)
+  const isCommunityQuota = (selectedStudent?.quota || '').toLowerCase().includes('community');
+  const visibleDocSpecs = useMemo(() => {
+    return DOCUMENT_SPECS.filter((spec) => {
+      if (spec.type === 'COMMUNITY_CERTIFICATE' && !isCommunityQuota) {
+        return false;
+      }
+      return true;
+    });
+  }, [isCommunityQuota]);
+
+  // Auto-switch away from Community Certificate tab if quota changes or student is not community quota
+  useEffect(() => {
+    if (activeDocSpecType === 'COMMUNITY_CERTIFICATE' && !isCommunityQuota) {
+      setActiveDocSpecType(visibleDocSpecs[0]?.type || 'PLUS_TWO_CERTIFICATE');
+    }
+  }, [isCommunityQuota, activeDocSpecType, visibleDocSpecs]);
+
   // Find active spec and uploaded document
-  const activeSpec = DOCUMENT_SPECS.find((s) => s.type === activeDocSpecType) || DOCUMENT_SPECS[0];
+  const activeSpec = visibleDocSpecs.find((s) => s.type === activeDocSpecType) || visibleDocSpecs[0] || DOCUMENT_SPECS[0];
   const activeDoc = findDocForSpec(activeSpec, selectedStudent?.documents);
   const activeDocFlag = selectedStudent?.fieldFlags && (
     selectedStudent.fieldFlags[activeSpec.type] ||
@@ -969,7 +987,7 @@ export const VerificationWorkbench: React.FC<Props> = ({
             {/* Document Tabs Bar */}
             <div className="bg-white px-2 pt-1 flex items-center justify-between border-b border-slate-200 shrink-0">
               <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
-                {DOCUMENT_SPECS.map((spec) => {
+                {visibleDocSpecs.map((spec) => {
                   const isSelectedTab = activeDocSpecType === spec.type;
                   const uploadedDoc = findDocForSpec(spec, selectedStudent?.documents);
                   const isUploaded = !!uploadedDoc;
@@ -1731,7 +1749,7 @@ export const VerificationWorkbench: React.FC<Props> = ({
                   </div>
 
                   <div className="space-y-1.5">
-                    {DOCUMENT_SPECS.map((spec) => {
+                    {visibleDocSpecs.map((spec) => {
                       const doc = findDocForSpec(spec, selectedStudent?.documents);
                       const isUploaded = !!doc;
                       const isFlagged =

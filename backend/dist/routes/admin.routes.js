@@ -220,6 +220,8 @@ router.post('/students/:id/flag', async (req, res) => {
             CASTE_CERT: ['CASTE_CERTIFICATE'],
             APAAR_DOCUMENT: ['APAAR_CARD'],
             APAAR_CARD: ['APAAR_DOCUMENT'],
+            AADHAAR_CARD: ['AADHAAR_DOCUMENT', 'aadhaar'],
+            AADHAAR_DOCUMENT: ['AADHAAR_CARD', 'aadhaar'],
             PROFILE_PHOTO: ['photoUrl'],
             photoUrl: ['PROFILE_PHOTO'],
             fatherName: ['parentName'],
@@ -400,17 +402,51 @@ router.get('/documents/:id/preview', async (req, res) => {
         res.setHeader('Cache-Control', 'public, max-age=3600');
         res.removeHeader('X-Frame-Options');
         // 1. Check if local file exists on disk
-        if (document.filePath && fs_1.default.existsSync(document.filePath)) {
-            return fs_1.default.createReadStream(document.filePath).pipe(res);
+        let diskPath = document.filePath;
+        if (diskPath && fs_1.default.existsSync(diskPath)) {
+            return fs_1.default.createReadStream(diskPath).pipe(res);
+        }
+        // 1b. Check relative candidates if path was recorded on another OS/machine
+        const fileName = document.fileName || (diskPath ? path_1.default.basename(diskPath) : '');
+        if (fileName) {
+            const candidates = [
+                path_1.default.resolve(process.cwd(), 'uploads/documents', fileName),
+                path_1.default.resolve(process.cwd(), 'uploads/certificates', fileName),
+                path_1.default.resolve(process.cwd(), 'uploads/photos', fileName),
+                path_1.default.resolve(process.cwd(), 'backend/uploads/documents', fileName),
+                path_1.default.resolve(process.cwd(), 'backend/uploads/certificates', fileName),
+                path_1.default.resolve(process.cwd(), 'backend/uploads/photos', fileName),
+            ];
+            for (const cand of candidates) {
+                if (fs_1.default.existsSync(cand)) {
+                    return fs_1.default.createReadStream(cand).pipe(res);
+                }
+            }
         }
         // 2. Fetch from remote cloud storage (Supabase or external URL)
         if (document.fileUrl && (document.fileUrl.startsWith('http://') || document.fileUrl.startsWith('https://'))) {
-            const response = await fetch(document.fileUrl);
-            if (!response.ok) {
-                return res.status(response.status).json({ error: 'Failed to retrieve document from cloud storage' });
+            const isLocalhost = document.fileUrl.includes('localhost:') || document.fileUrl.includes('127.0.0.1:');
+            if (!isLocalhost) {
+                const response = await fetch(document.fileUrl);
+                if (response.ok) {
+                    const buffer = Buffer.from(await response.arrayBuffer());
+                    return res.send(buffer);
+                }
             }
-            const buffer = Buffer.from(await response.arrayBuffer());
-            return res.send(buffer);
+            else {
+                // If localhost URL was stored, resolve locally
+                try {
+                    const urlObj = new URL(document.fileUrl);
+                    const rel = urlObj.pathname.replace(/^\/uploads\//, '');
+                    const localUpload = path_1.default.resolve(process.cwd(), 'uploads', rel);
+                    const backendUpload = path_1.default.resolve(process.cwd(), 'backend/uploads', rel);
+                    if (fs_1.default.existsSync(localUpload))
+                        return fs_1.default.createReadStream(localUpload).pipe(res);
+                    if (fs_1.default.existsSync(backendUpload))
+                        return fs_1.default.createReadStream(backendUpload).pipe(res);
+                }
+                catch (_) { }
+            }
         }
         return res.status(404).json({ error: 'Document file content unavailable' });
     }
@@ -449,6 +485,7 @@ router.get('/export/excel', async (req, res) => {
             { header: 'Blood Group', key: 'bloodGroup', width: 12 },
             { header: 'Email', key: 'email', width: 26 },
             { header: 'Phone Number', key: 'phoneNumber', width: 16 },
+            { header: 'Aadhaar Number', key: 'aadhaarNumber', width: 18 },
             { header: 'APAAR ID', key: 'apaarId', width: 20 },
             { header: 'Bank Name', key: 'bankName', width: 18 },
             { header: 'Bank Account No', key: 'bankAccountNumber', width: 20 },
@@ -481,6 +518,7 @@ router.get('/export/excel', async (req, res) => {
                 bloodGroup: s.bloodGroup,
                 email: s.user.email,
                 phoneNumber: s.user.phoneNumber,
+                aadhaarNumber: s.aadhaarNumber || '',
                 apaarId: s.apaarId || '',
                 bankName: s.bankName || '',
                 bankAccountNumber: s.bankAccountNumber || '',

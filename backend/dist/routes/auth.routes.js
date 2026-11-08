@@ -7,10 +7,13 @@ const express_1 = require("express");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const zod_1 = require("zod");
+const fs_1 = __importDefault(require("fs"));
+const path_1 = __importDefault(require("path"));
 const prisma_1 = require("../prisma");
 const auth_1 = require("../middleware/auth");
 const types_1 = require("../types");
 const mail_service_1 = require("../services/mail.service");
+const storage_service_1 = require("../services/storage.service");
 const router = (0, express_1.Router)();
 // Helper to sanitize and parse student profile with parsed fieldFlags object
 const formatStudentProfile = (profile) => {
@@ -44,6 +47,8 @@ const registerSchema = zod_1.z.object({
     address: zod_1.z.string().min(1),
     bloodGroup: zod_1.z.string().min(1),
     timePeriodOfStudy: zod_1.z.string().min(4), // e.g. "2024-2028"
+    photoBase64: zod_1.z.string().optional(),
+    photoFileName: zod_1.z.string().optional(),
 });
 const loginSchema = zod_1.z.object({
     identifier: zod_1.z.string().min(1), // Email or phone number
@@ -93,10 +98,55 @@ router.post('/register', async (req, res) => {
                 },
             },
             include: {
-                studentProfile: true,
+                studentProfile: {
+                    include: {
+                        documents: true,
+                    },
+                },
             },
         });
+        // Save passport photo if uploaded during registration
+        let createdPhotoDoc = null;
+        if (validatedData.photoBase64 && user.studentProfile) {
+            try {
+                const buffer = Buffer.from(validatedData.photoBase64, 'base64');
+                const originalName = validatedData.photoFileName || `profile_photo_${user.studentProfile.admissionNumber}.jpg`;
+                const ext = path_1.default.extname(originalName) || '.jpg';
+                const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+                const photosDir = path_1.default.join((0, storage_service_1.getUploadsRoot)(), 'photos');
+                if (!fs_1.default.existsSync(photosDir)) {
+                    fs_1.default.mkdirSync(photosDir, { recursive: true });
+                }
+                const tempPath = path_1.default.join(photosDir, `photo-${uniqueSuffix}${ext}`);
+                fs_1.default.writeFileSync(tempPath, buffer);
+                const fileUrl = await (0, storage_service_1.uploadFileToCloud)(tempPath, originalName, 'image/jpeg');
+                createdPhotoDoc = await prisma_1.prisma.studentDocument.create({
+                    data: {
+                        studentProfileId: user.studentProfile.id,
+                        type: 'PROFILE_PHOTO',
+                        fileName: originalName,
+                        filePath: tempPath,
+                        fileUrl,
+                        fileMimeType: 'image/jpeg',
+                        fileSize: buffer.length,
+                        status: 'VALID',
+                    },
+                });
+            }
+            catch (photoErr) {
+                console.warn('[Register Photo Upload Warning]', photoErr);
+            }
+        }
         const token = jsonwebtoken_1.default.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
+        const studentProfile = user.studentProfile;
+        const fullProfile = studentProfile
+            ? {
+                ...studentProfile,
+                documents: createdPhotoDoc
+                    ? [...(studentProfile.documents || []), createdPhotoDoc]
+                    : (studentProfile.documents || []),
+            }
+            : null;
         return res.status(201).json({
             message: 'Registration successful',
             token,
@@ -105,7 +155,7 @@ router.post('/register', async (req, res) => {
                 email: user.email,
                 phoneNumber: user.phoneNumber,
                 role: user.role,
-                studentProfile: formatStudentProfile(user.studentProfile),
+                studentProfile: formatStudentProfile(fullProfile),
             },
         });
     }
