@@ -532,7 +532,7 @@ export const SideBySideInspector: React.FC<Props> = ({
       ? Object.keys(student.fieldFlags)
       : [];
   const isResubmission =
-    (student.verificationStatus === 'SUBMITTED' || student.verificationStatus === 'DRAFT') &&
+    student.verificationStatus === 'SUBMITTED' &&
     (Boolean(student.isResubmission) || previouslyFlaggedKeys.length > 0);
 
   // Stream preview URL

@@ -1,24 +1,16 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="Baselios Poulose II Catholicose College - Student Admissions & Verification Portal">
+
+  <!-- Aggressive Cache-Busting HTTP Headers: Prevents browsers from caching stale HTML shells -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -29,18 +21,42 @@
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>college_app</title>
+  <title>BPC College - Student Verification Portal</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Automatic Stale Service Worker & Cache Killer -->
+  <script>
+    (function() {
+      // 1. Unregister all existing service workers to destroy old cached main.dart.js
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for (var i = 0; i < registrations.length; i++) {
+            registrations[i].unregister().then(function(success) {
+              console.log('[CacheBuster] Unregistered legacy service worker:', success);
+            });
+          }
+        });
+      }
+      // 2. Wipe browser CacheStorage API caches (flutter-app-cache, canvaskit, etc.)
+      if ('caches' in window) {
+        caches.keys().then(function(names) {
+          for (var j = 0; j < names.length; j++) {
+            caches.delete(names[j]).then(function(success) {
+              console.log('[CacheBuster] Purged stale cache storage:', success);
+            });
+          }
+        });
+      }
+    })();
+  </script>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
-  <script src="flutter_bootstrap.js" async></script>
+  <!-- Dynamically inject flutter_bootstrap.js with timestamp query parameter to bypass HTTP cache -->
+  <script>
+    var script = document.createElement('script');
+    script.src = 'flutter_bootstrap.js?v=' + Date.now();
+    script.async = true;
+    document.body.appendChild(script);
+  </script>
 </body>
 </html>
