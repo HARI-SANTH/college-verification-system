@@ -183,10 +183,22 @@ router.put('/profile', async (req: Request, res: Response) => {
 
         if (isFlagged) {
           dataToUpdate[key] = payload[key];
-          // Clear this field's flags and all aliases once edited
-          delete parsedFlags[key];
+          // Mark this field's flags and all aliases as RESOLVED once edited by student
+          parsedFlags[key] = {
+            status: 'RESOLVED',
+            reason: parsedFlags[key]?.reason,
+            flaggedAt: parsedFlags[key]?.flaggedAt,
+            resolvedAt: new Date().toISOString(),
+          };
           for (const a of aliases) {
-            delete parsedFlags[a];
+            if (parsedFlags[a]) {
+              parsedFlags[a] = {
+                status: 'RESOLVED',
+                reason: parsedFlags[a]?.reason,
+                flaggedAt: parsedFlags[a]?.flaggedAt,
+                resolvedAt: new Date().toISOString(),
+              };
+            }
           }
         }
       }
@@ -283,6 +295,9 @@ router.put('/profile', async (req: Request, res: Response) => {
       }
 
       nextStatus = VerificationStatus.SUBMITTED;
+      if (currentStatus === VerificationStatus.CORRECTION_REQUIRED || (profile as any).isResubmission) {
+        dataToUpdate.isResubmission = true;
+      }
     }
 
     const updatedProfile = await prisma.studentProfile.update({
@@ -372,9 +387,16 @@ router.post('/documents', uploadMiddleware.single('file'), async (req: Request, 
         });
       }
 
-      // Remove all matching flag aliases on re-upload
+      // Mark all matching flag aliases as RESOLVED on re-upload
       for (const k of allKeys) {
-        delete parsedFlags[k];
+        if (parsedFlags[k]) {
+          parsedFlags[k] = {
+            status: 'RESOLVED',
+            reason: parsedFlags[k]?.reason,
+            flaggedAt: parsedFlags[k]?.flaggedAt,
+            resolvedAt: new Date().toISOString(),
+          };
+        }
       }
     }
 
@@ -415,6 +437,7 @@ router.post('/documents', uploadMiddleware.single('file'), async (req: Request, 
       where: { id: profile.id },
       data: {
         fieldFlags: JSON.stringify(parsedFlags),
+        ...(profile.verificationStatus === VerificationStatus.CORRECTION_REQUIRED ? { isResubmission: true } : {}),
       },
     });
 

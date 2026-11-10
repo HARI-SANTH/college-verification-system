@@ -168,10 +168,22 @@ router.put('/profile', async (req, res) => {
                 const isFlagged = [key, ...aliases].some((k) => parsedFlags[k]?.status === 'FLAGGED_ERROR');
                 if (isFlagged) {
                     dataToUpdate[key] = payload[key];
-                    // Clear this field's flags and all aliases once edited
-                    delete parsedFlags[key];
+                    // Mark this field's flags and all aliases as RESOLVED once edited by student
+                    parsedFlags[key] = {
+                        status: 'RESOLVED',
+                        reason: parsedFlags[key]?.reason,
+                        flaggedAt: parsedFlags[key]?.flaggedAt,
+                        resolvedAt: new Date().toISOString(),
+                    };
                     for (const a of aliases) {
-                        delete parsedFlags[a];
+                        if (parsedFlags[a]) {
+                            parsedFlags[a] = {
+                                status: 'RESOLVED',
+                                reason: parsedFlags[a]?.reason,
+                                flaggedAt: parsedFlags[a]?.flaggedAt,
+                                resolvedAt: new Date().toISOString(),
+                            };
+                        }
                     }
                 }
             }
@@ -266,6 +278,9 @@ router.put('/profile', async (req, res) => {
                 });
             }
             nextStatus = types_1.VerificationStatus.SUBMITTED;
+            if (currentStatus === types_1.VerificationStatus.CORRECTION_REQUIRED || profile.isResubmission) {
+                dataToUpdate.isResubmission = true;
+            }
         }
         const updatedProfile = await prisma_1.prisma.studentProfile.update({
             where: { id: profile.id },
@@ -339,9 +354,16 @@ router.post('/documents', storage_service_1.uploadMiddleware.single('file'), asy
                     error: `Document '${docType}' was not flagged for correction and cannot be re-uploaded.`,
                 });
             }
-            // Remove all matching flag aliases on re-upload
+            // Mark all matching flag aliases as RESOLVED on re-upload
             for (const k of allKeys) {
-                delete parsedFlags[k];
+                if (parsedFlags[k]) {
+                    parsedFlags[k] = {
+                        status: 'RESOLVED',
+                        reason: parsedFlags[k]?.reason,
+                        flaggedAt: parsedFlags[k]?.flaggedAt,
+                        resolvedAt: new Date().toISOString(),
+                    };
+                }
             }
         }
         const fileUrl = await (0, storage_service_1.uploadFileToCloud)(req.file.path, req.file.originalname, req.file.mimetype);
@@ -379,6 +401,7 @@ router.post('/documents', storage_service_1.uploadMiddleware.single('file'), asy
             where: { id: profile.id },
             data: {
                 fieldFlags: JSON.stringify(parsedFlags),
+                ...(profile.verificationStatus === types_1.VerificationStatus.CORRECTION_REQUIRED ? { isResubmission: true } : {}),
             },
         });
         return res.status(201).json({

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StudentProfile, StudentDocument, AIVerificationSummary } from '../../types';
 import { api } from '../../services/api';
 
@@ -229,11 +229,61 @@ export const SideBySideInspector: React.FC<Props> = ({
   onBackToQueue,
   onStudentUpdated,
 }) => {
-  // Document viewer states
+  // Document viewer states (Pan & Zoom engine)
   const [activeDocType, setActiveDocType] = useState<string>('AADHAAR_CARD');
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [rotation, setRotation] = useState<number>(0);
   const [isHighContrast, setIsHighContrast] = useState<boolean>(false);
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const resetZoomAndPan = () => {
+    setZoomLevel(100);
+    setPanOffset({ x: 0, y: 0 });
+    setRotation(0);
+  };
+
+  // Global window listeners for drag-to-pan smoothness
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      const dx = e.clientX - dragStartRef.current.x;
+      const dy = e.clientY - dragStartRef.current.y;
+      setPanOffset({
+        x: panStartRef.current.x + dx,
+        y: panStartRef.current.y + dy,
+      });
+    };
+
+    const handleWindowMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  }, [isDragging]);
+
+  const handleWheelZoom = (e: React.WheelEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const zoomStep = e.deltaY < 0 ? 15 : -15;
+    setZoomLevel((prev) => Math.min(350, Math.max(50, prev + zoomStep)));
+  };
+
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Only primary/left click
+    setIsDragging(true);
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    panStartRef.current = { ...panOffset };
+  };
 
   // Staged discrepancy flags
   const [stagedFlags, setStagedFlags] = useState<Array<{ key: string; reason: string }>>([]);
@@ -287,6 +337,12 @@ export const SideBySideInspector: React.FC<Props> = ({
   };
 
   const activeDoc = getDocumentForType(activeDocType);
+  const isPdf = Boolean(
+    activeDoc && (
+      (activeDoc.fileMimeType && activeDoc.fileMimeType.toLowerCase().includes('pdf')) ||
+      (activeDoc.fileName && activeDoc.fileName.toLowerCase().endsWith('.pdf'))
+    )
+  );
 
   // Auto-select initial available document
   useEffect(() => {
@@ -344,7 +400,7 @@ export const SideBySideInspector: React.FC<Props> = ({
         if (linkedDoc && !existingKeys.has(linkedDoc.type)) {
           additions.push({
             key: linkedDoc.type,
-            reason: `Re-upload required: AI identified discrepancy in ${item.key} (${item.reason}). Please upload official copy of ${linkedDoc.label}.`,
+            reason: `Re-upload required: AI identified error in ${item.key} (${item.reason}). Please upload official copy of ${linkedDoc.label}.`,
           });
           existingKeys.add(linkedDoc.type);
         }
@@ -353,13 +409,14 @@ export const SideBySideInspector: React.FC<Props> = ({
       return [...prev, ...additions];
     });
     setShowFlagDrawer(true);
-    setToastMessage(`✓ Staged ${aiAudit.suggestedFlags.length} AI discrepancy notices + linked document re-uploads!`);
+    setToastMessage(`✓ Staged ${aiAudit.suggestedFlags.length} AI error flags + linked document re-uploads!`);
   };
 
   // Handle auto-docking when focusing a section on the right
   const triggerAutoDock = (docType: string, label: string) => {
     setActiveDocType(docType);
     setAutoDockedLabel(label);
+    resetZoomAndPan();
   };
 
   // Open the field flag modal
@@ -452,19 +509,19 @@ export const SideBySideInspector: React.FC<Props> = ({
   // Flag & Send Notice action
   const handleSendNotice = async () => {
     if (stagedFlags.length === 0) {
-      alert('Please flag at least one field or select a discrepancy notice before sending.');
+      alert('Please flag at least one field or select an error notice before sending.');
       return;
     }
     setIsSubmitting(true);
     try {
       await api.flagMistakes(student.id, stagedFlags);
-      setToastMessage('⚠ Discrepancy notice dispatched to student mobile app! Returning to queue...');
+      setToastMessage('⚠ Error notice dispatched to student mobile app! Returning to queue...');
       setTimeout(() => {
         onStudentUpdated();
         onBackToQueue();
       }, 700);
     } catch (err: any) {
-      alert(`Flagging error: ${err.message || 'Failed to send discrepancy notice'}`);
+      alert(`Flagging error: ${err.message || 'Failed to send error notice'}`);
       setIsSubmitting(false);
     }
   };
@@ -474,7 +531,9 @@ export const SideBySideInspector: React.FC<Props> = ({
     student.fieldFlags && typeof student.fieldFlags === 'object'
       ? Object.keys(student.fieldFlags)
       : [];
-  const isResubmission = student.verificationStatus === 'DRAFT' && previouslyFlaggedKeys.length > 0;
+  const isResubmission =
+    (student.verificationStatus === 'SUBMITTED' || student.verificationStatus === 'DRAFT') &&
+    (Boolean(student.isResubmission) || previouslyFlaggedKeys.length > 0);
 
   // Stream preview URL
   const getPreviewUrl = (doc?: StudentDocument) => {
@@ -501,6 +560,7 @@ export const SideBySideInspector: React.FC<Props> = ({
     const staged = stagedFlags.find((f) => f.key === fieldKey);
     const existing = student.fieldFlags && (student.fieldFlags as any)[fieldKey];
     const isPreviouslyFlagged = existing && existing.status === 'FLAGGED_ERROR';
+    const isResolved = existing && existing.status === 'RESOLVED';
 
     return (
       <div
@@ -509,6 +569,8 @@ export const SideBySideInspector: React.FC<Props> = ({
             ? 'bg-red-50/70 border-red-300 shadow-xs'
             : isPreviouslyFlagged
             ? 'bg-amber-50/50 border-amber-300'
+            : isResolved
+            ? 'bg-teal-50/60 border-teal-300'
             : 'bg-slate-50 border-slate-100 hover:border-slate-200'
         }`}
       >
@@ -518,6 +580,12 @@ export const SideBySideInspector: React.FC<Props> = ({
               <span className="text-slate-500 uppercase tracking-wider text-[10px] font-bold block truncate">
                 {label}
               </span>
+              {isResolved && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-teal-100 text-teal-800 border border-teal-300 flex items-center gap-0.5 shrink-0">
+                  <span className="material-symbols-outlined text-[10px]">check</span>
+                  Corrected by Student
+                </span>
+              )}
               {(() => {
                 const linked = FIELD_TO_DOC_MAP[fieldKey];
                 if (!linked) return null;
@@ -555,7 +623,7 @@ export const SideBySideInspector: React.FC<Props> = ({
               )}
             </div>
 
-            {/* AI Field-Level Match & Discrepancy Insight */}
+            {/* AI Field-Level Match & Error Insight */}
             {(() => {
               const aiField = aiAudit?.fieldResults?.find((f) => f.fieldKey === fieldKey);
               if (!aiField) return null;
@@ -576,7 +644,7 @@ export const SideBySideInspector: React.FC<Props> = ({
                 return (
                   <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-red-800 bg-red-100/90 px-2 py-1 rounded border border-red-300 w-fit flex-wrap">
                     <span className="material-symbols-outlined text-[13px] text-red-600">error</span>
-                    <span>AI Discrepancy: Doc reads &quot;{aiField.documentValue}&quot;</span>
+                    <span>AI Error Flag: Doc reads &quot;{aiField.documentValue}&quot;</span>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -616,7 +684,7 @@ export const SideBySideInspector: React.FC<Props> = ({
                 ? 'bg-red-600 text-white shadow-xs'
                 : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
             }`}
-            title={`Flag discrepancy for ${label}`}
+            title={`Flag error for ${label}`}
           >
             <span className="material-symbols-outlined text-sm">flag</span>
             <span className="hidden sm:inline">{staged ? 'Flagged' : 'Flag'}</span>
@@ -704,36 +772,6 @@ export const SideBySideInspector: React.FC<Props> = ({
               {student.firstName} {student.lastName}
             </span>
           </div>
-
-          {/* Right Viewer Control Utilities */}
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
-              <button
-                onClick={() => setZoomLevel((z) => Math.max(50, z - 15))}
-                className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-200 text-slate-600"
-                title="Zoom Out (-)"
-              >
-                <span className="material-symbols-outlined text-sm">zoom_out</span>
-              </button>
-              <span className="font-mono text-xs px-1.5 text-slate-700 font-bold">
-                {zoomLevel}%
-              </span>
-              <button
-                onClick={() => setZoomLevel((z) => Math.min(200, z + 15))}
-                className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-200 text-slate-600"
-                title="Zoom In (+)"
-              >
-                <span className="material-symbols-outlined text-sm">zoom_in</span>
-              </button>
-              <button
-                onClick={() => setRotation((r) => (r + 90) % 360)}
-                className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-200 text-slate-600 ml-1"
-                title="Rotate 90° Clockwise"
-              >
-                <span className="material-symbols-outlined text-sm">rotate_right</span>
-              </button>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -742,86 +780,136 @@ export const SideBySideInspector: React.FC<Props> = ({
         {/* LEFT PANE: Smart Auto-Docking Document Viewer (Col 6) */}
         <section className="lg:col-span-6 bg-slate-200/60 border-r border-slate-200 flex flex-col relative overflow-hidden h-full">
           {/* Document Tab Strip (Supports ALL 10 Documents) */}
-          <div className="w-full bg-white border-b border-slate-200 px-4 py-2 overflow-x-auto whitespace-nowrap flex items-center gap-1.5 shrink-0 shadow-xs">
-            {ALL_DOCUMENTS.map((docItem) => {
-              const docFound = getDocumentForType(docItem.type);
-              const isActive = activeDocType === docItem.type;
-              return (
-                <button
-                  key={docItem.type}
-                  onClick={() => triggerAutoDock(docItem.type, docItem.label)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    isActive
-                      ? 'bg-[#1e3a8a] text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  <span>{docItem.label}</span>
-                  {docFound && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-400"></span>
-                  )}
-                </button>
-              );
-            })}
+          <div className="w-full bg-white border-b border-slate-200 px-4 py-2 overflow-x-auto whitespace-nowrap flex items-center justify-between gap-1.5 shrink-0 shadow-xs">
+            <div className="flex items-center gap-1.5">
+              {ALL_DOCUMENTS.map((docItem) => {
+                const docFound = getDocumentForType(docItem.type);
+                const isActive = activeDocType === docItem.type;
+                return (
+                  <button
+                    key={docItem.type}
+                    onClick={() => triggerAutoDock(docItem.type, docItem.label)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      isActive
+                        ? 'bg-[#1e3a8a] text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>{docItem.label}</span>
+                    {docFound && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal-400"></span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {activeDoc && (
+              <a
+                href={getPreviewUrl(activeDoc) || '#'}
+                target="_blank"
+                rel="noreferrer"
+                download={activeDoc.fileName}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 hover:text-blue-700 hover:bg-slate-100 border border-slate-200 transition-colors shrink-0"
+                title="Open original document in new browser tab"
+              >
+                <span className="material-symbols-outlined text-sm">open_in_new</span>
+                <span className="hidden sm:inline">Pop-out</span>
+              </a>
+            )}
           </div>
 
-          {/* Document Canvas Viewport */}
-          <div className="relative flex-1 p-6 flex items-center justify-center overflow-auto bg-slate-200/50">
-            {/* Viewer HUD overlay */}
-            <div className="absolute top-4 right-4 z-20 flex items-center gap-1 bg-white/95 backdrop-blur shadow-md px-2 py-1.5 rounded-xl border border-slate-200">
-              <button
-                onClick={() => setIsHighContrast(!isHighContrast)}
-                className="p-1 hover:bg-slate-100 rounded text-slate-600"
-                title="Toggle High Contrast"
+          {/* Document Canvas Viewport:
+              - For PDF: Browser's native grey preview engine is stationary and fitted to the section.
+                All native toolbar buttons (print, +, -, rotate, download, scrollbar) work natively.
+              - For Images: Scalable & pannable inside the stationary frame (mouse wheel zoom, left-click drag).
+          */}
+          <div
+            onWheel={isPdf ? undefined : handleWheelZoom}
+            onMouseDown={isPdf ? undefined : handleCanvasMouseDown}
+            onDoubleClick={isPdf ? undefined : resetZoomAndPan}
+            className={`relative flex-1 p-2 sm:p-3 flex flex-col items-stretch overflow-hidden bg-slate-200/50 ${
+              isPdf ? '' : isDragging ? 'cursor-grabbing select-none' : 'cursor-grab select-none'
+            }`}
+            title={
+              isPdf
+                ? undefined
+                : 'Scroll mouse wheel to zoom • Hold left-click and drag to move • Double-click to reset'
+            }
+          >
+            {/* Viewer HUD overlay for Images only (PDF has native toolbar) */}
+            {!isPdf && activeDoc && (
+              <div
+                className="absolute top-4 right-4 z-20 flex items-center gap-1.5 bg-white/95 backdrop-blur shadow-md px-2.5 py-1.5 rounded-xl border border-slate-200"
+                onMouseDown={(e) => e.stopPropagation()}
               >
-                <span className="material-symbols-outlined text-base">contrast</span>
-              </button>
-              <button
-                onClick={() => {
-                  setZoomLevel(100);
-                  setRotation(0);
-                }}
-                className="p-1 hover:bg-slate-100 rounded text-slate-600"
-                title="Fit to Screen"
-              >
-                <span className="material-symbols-outlined text-base">fit_screen</span>
-              </button>
-              {activeDoc && (
+                <span className="font-mono text-[11px] font-bold text-slate-700 px-1 select-none">
+                  {zoomLevel}%
+                </span>
+                <button
+                  onClick={() => setRotation((r) => (r + 90) % 360)}
+                  className="p-1 hover:bg-slate-100 rounded text-slate-600 transition-colors"
+                  title="Rotate 90° Clockwise"
+                >
+                  <span className="material-symbols-outlined text-base">rotate_right</span>
+                </button>
+                <button
+                  onClick={() => setIsHighContrast(!isHighContrast)}
+                  className="p-1 hover:bg-slate-100 rounded text-slate-600 transition-colors"
+                  title="Toggle High Contrast"
+                >
+                  <span className="material-symbols-outlined text-base">contrast</span>
+                </button>
+                <button
+                  onClick={resetZoomAndPan}
+                  className="p-1 hover:bg-slate-100 rounded text-slate-600 transition-colors"
+                  title="Fit to Screen / Reset Zoom & Pan"
+                >
+                  <span className="material-symbols-outlined text-base">fit_screen</span>
+                </button>
                 <a
                   href={getPreviewUrl(activeDoc) || '#'}
                   target="_blank"
                   rel="noreferrer"
                   download={activeDoc.fileName}
-                  className="p-1 hover:bg-slate-100 rounded text-slate-600"
+                  className="p-1 hover:bg-slate-100 rounded text-slate-600 transition-colors"
                   title="Open Original Document in New Tab"
                 >
                   <span className="material-symbols-outlined text-base">open_in_new</span>
                 </a>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Active Document Viewer Content */}
             {activeDoc ? (
-              <div
-                className={`transition-transform duration-200 origin-center max-w-full max-h-full shadow-xl rounded-lg overflow-hidden bg-white ${
-                  isHighContrast ? 'contrast-150 grayscale' : ''
-                }`}
-                style={{
-                  transform: `scale(${zoomLevel / 100}) rotate(${rotation}deg)`,
-                }}
-              >
-                {activeDoc.fileMimeType?.includes('pdf') || activeDoc.fileName.toLowerCase().endsWith('.pdf') ? (
+              /* Stationary window frame fitted to this preview section */
+              <div className="w-full h-full flex-1 rounded-xl shadow-xs overflow-hidden bg-white border border-slate-200 relative flex items-center justify-center">
+                {isPdf ? (
+                  /* Fixed stationary native PDF engine with working buttons (print, +, -, download, scrollbar) */
                   <iframe
-                    src={getPreviewUrl(activeDoc) || ''}
+                    key={activeDoc.id || activeDoc.fileName}
+                    src={`${getPreviewUrl(activeDoc) || ''}#view=FitH`}
                     title={activeDoc.fileName}
-                    className="w-[600px] h-[780px] border-none"
+                    className="w-full h-full border-none block pointer-events-auto"
                   />
                 ) : (
-                  <img
-                    src={getPreviewUrl(activeDoc) || ''}
-                    alt={activeDoc.fileName}
-                    className="max-h-[780px] w-auto object-contain rounded"
-                  />
+                  /* Scalable & Pannable Document Image (Only the image zooms and moves) */
+                  <div
+                    className="w-full h-full flex items-center justify-center overflow-hidden"
+                    style={{ touchAction: 'none' }}
+                  >
+                    <img
+                      src={getPreviewUrl(activeDoc) || ''}
+                      alt={activeDoc.fileName}
+                      className={`max-w-full max-h-full object-contain transition-transform duration-75 select-none ${
+                        isHighContrast ? 'contrast-150 grayscale' : ''
+                      }`}
+                      style={{
+                        transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel / 100}) rotate(${rotation}deg)`,
+                        transformOrigin: 'center center',
+                      }}
+                      draggable={false}
+                    />
+                  </div>
                 )}
               </div>
             ) : (
@@ -839,7 +927,7 @@ export const SideBySideInspector: React.FC<Props> = ({
             )}
 
             {/* Auto-docking HUD Status Indicator */}
-            <div className="absolute bottom-4 left-4 z-20 flex items-center gap-2 bg-white/95 backdrop-blur px-3.5 py-1.5 rounded-full border border-teal-300 shadow-md">
+            <div className="absolute bottom-4 left-4 z-20 flex items-center gap-2 bg-white/95 backdrop-blur px-3.5 py-1.5 rounded-full border border-teal-300 shadow-md pointer-events-none">
               <span className="flex h-2 w-2 relative">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-600"></span>
@@ -932,7 +1020,7 @@ export const SideBySideInspector: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* AI Summary Text & Discrepancy Action Bar */}
+            {/* AI Summary Text & Error Flags Action Bar */}
             {aiAudit && (
               <div className="pt-3 border-t border-white/10 flex flex-col gap-3 text-xs">
                 <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-blue-100 leading-relaxed text-[11px] flex items-start gap-2.5">
@@ -946,14 +1034,14 @@ export const SideBySideInspector: React.FC<Props> = ({
                     <div className="flex items-center gap-2 text-red-200 text-xs">
                       <span className="material-symbols-outlined text-lg text-red-400 shrink-0">report_problem</span>
                       <span>
-                        AI detected <strong>{aiAudit.suggestedFlags.length}</strong> discrepancy item(s) on certificates.
+                        AI detected <strong>{aiAudit.suggestedFlags.length}</strong> error item(s) on certificates.
                       </span>
                     </div>
                     <button
                       onClick={stageAllAiFlags}
                       className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-md transition-all active:scale-[0.98] flex items-center gap-1.5"
                     >
-                      <span>⚡ Stage All AI Discrepancies</span>
+                      <span>⚡ Stage All AI Error Flags</span>
                     </button>
                   </div>
                 ) : (
@@ -1354,7 +1442,7 @@ export const SideBySideInspector: React.FC<Props> = ({
                         </div>
                         <div>
                           <span className="text-slate-500 block text-[10px] uppercase font-semibold">AI Calculated from Marksheet</span>
-                          <span className="font-mono font-bold text-red-600">{aiPerc.documentValue || 'Calculation Discrepancy'}</span>
+                          <span className="font-mono font-bold text-red-600">{aiPerc.documentValue || 'Calculation Error'}</span>
                         </div>
                       </div>
                       {aiPerc.note && (
@@ -1372,7 +1460,7 @@ export const SideBySideInspector: React.FC<Props> = ({
                           className="px-2.5 py-1 rounded bg-red-600 hover:bg-red-700 text-white font-bold text-[11px] flex items-center gap-1 transition-all"
                         >
                           <span className="material-symbols-outlined text-xs">flag</span>
-                          <span>Stage Mark Discrepancy Notice</span>
+                          <span>Stage Mark Error Flag</span>
                         </button>
                       </div>
                     </div>
@@ -1722,7 +1810,7 @@ export const SideBySideInspector: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* CARD 7: Global Discrepancy Presets & Custom Remarks */}
+          {/* CARD 7: Global Error Presets & Custom Remarks */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 flex flex-col gap-3 shrink-0">
             <div
               className="flex items-center justify-between cursor-pointer"
@@ -1731,7 +1819,7 @@ export const SideBySideInspector: React.FC<Props> = ({
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-red-500 text-xl">flag</span>
                 <h4 className="text-sm font-bold text-slate-900">
-                  Global Discrepancy Presets &amp; Custom Remarks ({stagedFlags.length} Staged)
+                  Global Error Presets &amp; Custom Remarks ({stagedFlags.length} Staged)
                 </h4>
               </div>
               <span className="material-symbols-outlined text-slate-400 text-lg">
@@ -1819,7 +1907,7 @@ export const SideBySideInspector: React.FC<Props> = ({
             <div className="px-5 py-4 bg-red-50 border-b border-red-200 flex items-center justify-between">
               <div className="flex items-center gap-2 text-red-900">
                 <span className="material-symbols-outlined text-red-600">flag</span>
-                <span className="font-bold text-sm">Flag Discrepancy: {activeFieldModal.label}</span>
+                <span className="font-bold text-sm">Flag Error: {activeFieldModal.label}</span>
               </div>
               <button
                 onClick={() => setActiveFieldModal(null)}
@@ -1908,7 +1996,7 @@ export const SideBySideInspector: React.FC<Props> = ({
               {/* Exact Notice Text Area */}
               <div>
                 <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block mb-1">
-                  Exact Discrepancy Notice for Student Mobile App:
+                  Exact Error Notice for Student Mobile App:
                 </label>
                 <textarea
                   rows={3}
@@ -1949,7 +2037,7 @@ export const SideBySideInspector: React.FC<Props> = ({
                   type="button"
                   onClick={() => {
                     if (!modalReason.trim()) {
-                      alert('Please enter or select a discrepancy notice reason.');
+                      alert('Please enter or select an error notice reason.');
                       return;
                     }
                     const targetKey = activeFieldModal.key;
@@ -1959,7 +2047,7 @@ export const SideBySideInspector: React.FC<Props> = ({
                     if (alsoFlagDocument) {
                       const linkedDoc = FIELD_TO_DOC_MAP[targetKey];
                       if (linkedDoc) {
-                        const docReason = `Discrepancy noted in ${targetLabel}: Please re-upload official ${linkedDoc.label} for verification. (${modalReason.trim()})`;
+                        const docReason = `Error noted in ${targetLabel}: Please re-upload official ${linkedDoc.label} for verification. (${modalReason.trim()})`;
                         handleStageFieldFlag(linkedDoc.type, docReason);
                         triggerAutoDock(linkedDoc.type, linkedDoc.label);
                         setToastMessage(`✓ Flagged "${targetLabel}" and requested re-upload of "${linkedDoc.label}"!`);
@@ -1973,7 +2061,7 @@ export const SideBySideInspector: React.FC<Props> = ({
                   }}
                   className="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-xs"
                 >
-                  Save Discrepancy Flag
+                  Save Error Flag
                 </button>
               </div>
             </div>
@@ -1983,17 +2071,17 @@ export const SideBySideInspector: React.FC<Props> = ({
 
       {/* BOTTOM PERSISTENT ACTION DOCK */}
       <footer className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-200/90 shadow-2xl px-6 flex items-center justify-between z-40 select-none">
-        {/* Left: Discrepancy Status */}
+        {/* Left: Error Status */}
         <div className="flex items-center gap-2">
           {stagedFlags.length === 0 ? (
             <div className="flex items-center gap-2 text-teal-700 text-xs font-bold">
               <span className="material-symbols-outlined text-base">check_circle</span>
-              <span>0 discrepancies flagged. Dossier is clean and eligible for sign-off.</span>
+              <span>0 errors flagged. Dossier is clean and eligible for sign-off.</span>
             </div>
           ) : (
             <div className="flex items-center gap-2 text-red-600 text-xs font-bold">
               <span className="material-symbols-outlined text-base">warning</span>
-              <span>{stagedFlags.length} discrepancy notice(s) staged for student action.</span>
+              <span>{stagedFlags.length} error notice(s) staged for student action.</span>
             </div>
           )}
         </div>
@@ -2012,14 +2100,14 @@ export const SideBySideInspector: React.FC<Props> = ({
             <span>Remove Duplicate</span>
           </button>
 
-          {/* Secondary Action: Send Discrepancy Notice */}
+          {/* Secondary Action: Send Error Notice */}
           <button
             onClick={handleSendNotice}
             disabled={isSubmitting || stagedFlags.length === 0}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-red-300 hover:bg-red-50 text-red-600 font-bold text-xs shadow-xs transition-all active:scale-[0.98] disabled:opacity-50"
           >
             <span className="material-symbols-outlined text-base">outgoing_mail</span>
-            <span>Send Discrepancy Notice &amp; Return</span>
+            <span>Send Error Notice &amp; Return</span>
           </button>
 
           {/* Primary Action: Approve Student */}

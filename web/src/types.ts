@@ -15,9 +15,10 @@ export type DocumentType =
   | 'AADHAAR_CARD';
 
 export interface FieldFlagDetail {
-  status: 'FLAGGED_ERROR' | 'VALID';
+  status: 'FLAGGED_ERROR' | 'VALID' | 'RESOLVED';
   reason?: string;
   flaggedAt?: string;
+  resolvedAt?: string;
 }
 
 export interface StudentDocument {
@@ -120,6 +121,7 @@ export interface StudentProfile {
   aadhaarNumber?: string | null;
 
   verificationStatus: VerificationStatus;
+  isResubmission?: boolean;
   verifiedAt?: string | null;
   verifiedByAdminId?: string | null;
 

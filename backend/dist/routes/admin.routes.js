@@ -271,6 +271,7 @@ router.post('/students/:id/flag', async (req, res) => {
             where: { id: student.id },
             data: {
                 verificationStatus: types_1.VerificationStatus.CORRECTION_REQUIRED,
+                isResubmission: false,
                 fieldFlags: JSON.stringify(currentFlags),
             },
             include: {
@@ -324,6 +325,7 @@ router.post('/students/:id/verify', async (req, res) => {
             where: { id: student.id },
             data: {
                 verificationStatus: types_1.VerificationStatus.VERIFIED,
+                isResubmission: false,
                 verifiedAt: new Date(),
                 verifiedByAdminId: req.user.userId,
                 fieldFlags: '{}', // clear any old flags

@@ -394,7 +394,7 @@ Return ONLY valid JSON with this exact structure:
             overallMatchScore: overallScore,
             status: redCount > 0 ? 'DISCREPANCIES_DETECTED' : 'ALL_MATCHED',
             summary: redCount > 0
-                ? `Heuristic audit detected ${redCount} discrepancy item(s). Review highlighted fields.`
+                ? `Heuristic audit detected ${redCount} error item(s). Review highlighted fields.`
                 : 'All core parameters formatted correctly and eligible for verification sign-off.',
             stats: {
                 greenCount,

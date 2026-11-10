@@ -25,9 +25,10 @@ export enum DocumentType {
 }
 
 export interface FieldFlagDetail {
-  status: 'FLAGGED_ERROR' | 'VALID';
+  status: 'FLAGGED_ERROR' | 'VALID' | 'RESOLVED';
   reason?: string;
   flaggedAt?: string;
+  resolvedAt?: string;
 }
 
 export interface AuthUser {

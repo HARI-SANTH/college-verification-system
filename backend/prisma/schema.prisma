@@ -80,6 +80,7 @@ model StudentProfile {
 
   // Status & Field Flagging
   verificationStatus  String            @default("DRAFT") // DRAFT, SUBMITTED, CORRECTION_REQUIRED, VERIFIED
+  isResubmission      Boolean           @default(false)
   verifiedAt          DateTime?
   verifiedByAdminId   String?
 

@@ -38,17 +38,28 @@ export const VerificationQueueDesk: React.FC<Props> = ({
     }
   };
 
-  // Real calculations based on database fields
-  // Resubmissions: students who had flags in fieldFlags or previous corrections and are ready for re-check
-  const resubmissionsList = students.filter((s) => {
-    const hasFlags = s.fieldFlags && typeof s.fieldFlags === 'object' && Object.keys(s.fieldFlags).length > 0;
-    return s.verificationStatus === 'DRAFT' && hasFlags;
-  });
+  // Helper to identify if a student profile is a resubmission after corrections
+  const isStudentResubmission = (s: StudentProfile): boolean => {
+    if (s.isResubmission) return true;
+    if (s.fieldFlags && typeof s.fieldFlags === 'object' && Object.keys(s.fieldFlags).length > 0) {
+      return true;
+    }
+    return false;
+  };
 
-  // Fresh Inflow: submitted profiles awaiting first-time audit
-  const freshInflowList = students.filter((s) => s.verificationStatus === 'SUBMITTED');
+  // 1. Priority Resubmissions: students who submitted corrections after being flagged
+  const resubmissionsList = students.filter(
+    (s) => s.verificationStatus === 'SUBMITTED' && isStudentResubmission(s)
+  );
 
-  // Waiting on student: flagged / notice sent
+  // 2. Fresh Inflow: new student submissions awaiting first-time audit (never flagged)
+  const freshInflowList = students.filter(
+    (s) =>
+      (s.verificationStatus === 'SUBMITTED' || s.verificationStatus === 'DRAFT') &&
+      !isStudentResubmission(s)
+  );
+
+  // 3. Waiting on student: flagged / notice sent
   const waitingList = students.filter((s) => s.verificationStatus === 'CORRECTION_REQUIRED');
 
   // Verified count
@@ -477,7 +488,7 @@ export const VerificationQueueDesk: React.FC<Props> = ({
                 ? 'No students are currently awaiting re-check after corrections.'
                 : activeBucket === 'inflow'
                 ? 'No fresh student submissions are waiting for initial verification.'
-                : 'No students currently have active discrepancy notices dispatched.'}
+                : 'No students currently have active error notices dispatched.'}
             </p>
             <div className="mt-4 flex items-center gap-3">
               <button
