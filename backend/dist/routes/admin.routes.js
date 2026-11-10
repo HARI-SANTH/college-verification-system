@@ -8,7 +8,9 @@ const prisma_1 = require("../prisma");
 const auth_1 = require("../middleware/auth");
 const types_1 = require("../types");
 const mail_service_1 = require("../services/mail.service");
+const storage_service_1 = require("../services/storage.service");
 const ai_verifier_service_1 = require("../services/ai-verifier.service");
+const rate_limiter_1 = require("../middleware/rate-limiter");
 const exceljs_1 = __importDefault(require("exceljs"));
 const archiver_1 = __importDefault(require("archiver"));
 const path_1 = __importDefault(require("path"));
@@ -229,6 +231,12 @@ router.post('/students/:id/flag', async (req, res) => {
             parentName: ['fatherName'],
             fatherOccupation: ['parentOccupation'],
             parentOccupation: ['fatherOccupation'],
+            fullName: ['firstName', 'lastName'],
+            firstName: ['fullName'],
+            lastName: ['fullName'],
+            nameMalayalam: ['firstNameMalayalam', 'lastNameMalayalam'],
+            firstNameMalayalam: ['nameMalayalam'],
+            lastNameMalayalam: ['nameMalayalam'],
         };
         for (const flag of flags) {
             const flagDetail = {
@@ -349,7 +357,7 @@ router.post('/students/:id/verify', async (req, res) => {
     }
 });
 // 4b. AI Automated Discrepancy Verification Scan
-router.post('/students/:id/ai-verify', async (req, res) => {
+router.all('/students/:id/ai-verify', rate_limiter_1.aiVerificationLimiter, async (req, res) => {
     try {
         const student = await prisma_1.prisma.studentProfile.findFirst({
             where: {
@@ -366,7 +374,8 @@ router.post('/students/:id/ai-verify', async (req, res) => {
         if (!student) {
             return res.status(404).json({ error: 'Student not found' });
         }
-        const auditResult = await ai_verifier_service_1.aiVerifierService.runAudit(student);
+        const force = req.query.force === 'true' || req.body?.force === true;
+        const auditResult = await ai_verifier_service_1.aiVerifierService.runAudit(student, force);
         return res.json(auditResult);
     }
     catch (err) {
@@ -457,7 +466,7 @@ router.get('/documents/:id/preview', async (req, res) => {
     }
 });
 // 5. Export to Excel
-router.get('/export/excel', async (req, res) => {
+router.get('/export/excel', rate_limiter_1.exportLimiter, async (req, res) => {
     try {
         const where = buildStudentFilter(req.query);
         const students = await prisma_1.prisma.studentProfile.findMany({
@@ -539,7 +548,7 @@ router.get('/export/excel', async (req, res) => {
     }
 });
 // 6. Bulk Document Download (ZIP)
-router.get('/export/documents-zip', async (req, res) => {
+router.get('/export/documents-zip', rate_limiter_1.exportLimiter, async (req, res) => {
     try {
         const where = buildStudentFilter(req.query);
         const docTypeFilter = req.query.documentType; // Optional: specific document type like APAAR_DOCUMENT
@@ -581,6 +590,59 @@ router.get('/export/documents-zip', async (req, res) => {
     catch (err) {
         console.error('[Bulk ZIP Error]', err);
         return res.status(500).json({ error: 'Failed to generate documents ZIP' });
+    }
+});
+// 7. Delete / Purge Student Record (e.g. for Duplicate Entries or Mistaken Registrations)
+router.delete('/students/:id', async (req, res) => {
+    try {
+        const studentId = String(req.params.id);
+        const { reason = 'Duplicate Entry / Administrative Purge' } = req.body || {};
+        const profile = await prisma_1.prisma.studentProfile.findUnique({
+            where: { id: studentId },
+            include: {
+                user: true,
+                documents: true,
+            },
+        });
+        if (!profile) {
+            return res.status(404).json({ error: 'Student record not found' });
+        }
+        // 1. Delete all attached files from Supabase Storage and local disk
+        for (const doc of profile.documents) {
+            if (doc.fileUrl) {
+                await (0, storage_service_1.deleteFileFromCloud)(doc.fileUrl);
+            }
+            if (doc.filePath && doc.filePath !== doc.fileUrl) {
+                await (0, storage_service_1.deleteFileFromCloud)(doc.filePath);
+            }
+        }
+        // 2. Audit Log the deletion
+        await prisma_1.prisma.auditLog.create({
+            data: {
+                adminId: req.user.userId,
+                targetId: profile.id,
+                action: 'DELETED_STUDENT_RECORD',
+                details: JSON.stringify({
+                    deletedStudent: `${profile.firstName} ${profile.lastName}`,
+                    admissionNumber: profile.admissionNumber,
+                    userEmail: profile.user?.email,
+                    reason,
+                    deletedAt: new Date().toISOString(),
+                }),
+            },
+        });
+        // 3. Delete the User record (cascading deletes StudentProfile & StudentDocuments)
+        await prisma_1.prisma.user.delete({
+            where: { id: profile.userId },
+        });
+        return res.json({
+            message: `Student ${profile.firstName} ${profile.lastName} (${profile.admissionNumber}) and all associated documents deleted successfully.`,
+            deletedId: studentId,
+        });
+    }
+    catch (err) {
+        console.error('[Admin Delete Student Error]', err);
+        return res.status(500).json({ error: err.message || 'Failed to delete student record' });
     }
 });
 exports.default = router;

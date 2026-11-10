@@ -34,6 +34,43 @@ export interface StudentDocument {
   uploadedAt: string;
 }
 
+export type VerificationColorStatus = 'GREEN' | 'YELLOW' | 'RED';
+
+export interface FieldVerificationResult {
+  fieldKey: string;
+  fieldLabel: string;
+  type?: 'TEXT_FIELD' | 'DOCUMENT';
+  colorStatus: VerificationColorStatus;
+  match: boolean;
+  isUnsubmitted?: boolean;
+  isMismatch?: boolean;
+  isUncertain?: boolean;
+  portalValue: string;
+  documentValue: string;
+  confidence: number;
+  note?: string;
+  suggestedReason?: string;
+}
+
+export interface AIVerificationSummary {
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  overallMatchScore: number;
+  status: 'ALL_MATCHED' | 'DISCREPANCIES_DETECTED' | 'MISSING_DOCUMENTS';
+  summary: string;
+  stats: {
+    greenCount: number;
+    yellowCount: number;
+    redCount: number;
+    autoFlaggedCount: number;
+  };
+  fieldResults: FieldVerificationResult[];
+  suggestedFlags: Array<{ key: string; reason: string }>;
+  scannedAt: string;
+  uploadedAt: string;
+}
+
 export interface StudentProfile {
   id: string;
   userId: string;

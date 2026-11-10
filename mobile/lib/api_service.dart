@@ -224,6 +224,23 @@ class ApiService {
     return StudentDocument.fromJson(data['document']);
   }
 
+  static Future<void> deleteAccount({String? reason}) async {
+    final baseUrl = await getBaseUrl();
+    final headers = await _headers();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/student/account'),
+      headers: headers,
+      body: jsonEncode({'reason': reason ?? 'Self-requested duplicate account deletion'}),
+    );
+
+    final data = jsonDecode(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(data['error'] ?? 'Failed to delete account');
+    }
+
+    await clearToken();
+  }
+
   static String resolveMediaUrl(String? url) {
     if (url == null || url.trim().isEmpty) return '';
     if (url.startsWith('http://localhost:5000')) {

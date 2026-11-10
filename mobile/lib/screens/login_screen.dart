@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api_service.dart';
+import '../utils/passport_photo_validator.dart';
 import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -184,17 +185,43 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final XFile? image = await _imagePicker.pickImage(
         source: source,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 85,
+        maxWidth: 900,
+        maxHeight: 1200,
+        imageQuality: 82,
       );
       if (image != null) {
         final bytes = await image.readAsBytes();
+        final validation = await PassportPhotoValidator.validate(bytes, fileName: image.name);
+        if (!validation.isValid) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(validation.errorMessage ?? 'Invalid passport photo'),
+                backgroundColor: const Color(0xFFEF4444),
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+          setState(() {
+            _photoError = validation.errorMessage;
+          });
+          return;
+        }
+
         setState(() {
           _signupPhotoBytes = bytes;
           _signupPhotoName = image.name.isNotEmpty ? image.name : 'passport_${DateTime.now().millisecondsSinceEpoch}.jpg';
           _photoError = null;
         });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✓ Passport photo validated (${validation.dimensionsText})!'),
+              backgroundColor: const Color(0xFF0D9488),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {

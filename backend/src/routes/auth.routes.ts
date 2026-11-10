@@ -9,6 +9,7 @@ import { authenticateToken } from '../middleware/auth';
 import { Role } from '../types';
 import { mailService } from '../services/mail.service';
 import { uploadFileToCloud, getUploadsRoot } from '../services/storage.service';
+import { authLimiter, passwordResetLimiter } from '../middleware/rate-limiter';
 
 const router = Router();
 
@@ -55,7 +56,7 @@ const loginSchema = z.object({
 });
 
 // Student Sign-Up / Register
-router.post('/register', async (req: Request, res: Response) => {
+router.post('/register', authLimiter, async (req: Request, res: Response) => {
   try {
     const validatedData = registerSchema.parse(req.body);
 
@@ -182,7 +183,7 @@ router.post('/register', async (req: Request, res: Response) => {
 });
 
 // Login (Student, Admin, Super Admin)
-router.post('/login', async (req: Request, res: Response) => {
+router.post('/login', authLimiter, async (req: Request, res: Response) => {
   try {
     const { identifier, password } = loginSchema.parse(req.body);
     const trimmedId = identifier.trim();
@@ -292,7 +293,7 @@ const maskEmail = (email: string) => {
 };
 
 // 4. Request Password Reset OTP
-router.post('/forgot-password', async (req: Request, res: Response) => {
+router.post('/forgot-password', passwordResetLimiter, async (req: Request, res: Response) => {
   try {
     const { identifier } = forgotPasswordSchema.parse(req.body);
     const trimmed = identifier.trim();
@@ -360,7 +361,7 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
 });
 
 // 5. Verify OTP & Reset Password
-router.post('/reset-password', async (req: Request, res: Response) => {
+router.post('/reset-password', passwordResetLimiter, async (req: Request, res: Response) => {
   try {
     const { identifier, otp, newPassword } = resetPasswordSchema.parse(req.body);
     const trimmed = identifier.trim();

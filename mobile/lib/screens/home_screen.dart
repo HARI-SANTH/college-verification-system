@@ -47,6 +47,62 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
+  Future<void> _handleDeleteDuplicateAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: const [
+            Icon(Icons.delete_forever, color: Colors.red),
+            SizedBox(width: 8),
+            Text('Delete Duplicate Account?', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          'Are you sure you want to delete this account?\n\n'
+          'This will permanently remove your student profile and all uploaded documents from cloud storage so you can register afresh with correct details.\n\n'
+          'Note: This action cannot be undone.',
+          style: TextStyle(fontSize: 13, height: 1.4, color: Color(0xFF334155)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete Account', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Deleting duplicate account...')),
+        );
+        await ApiService.deleteAccount(reason: 'Student-initiated duplicate registration purge');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Account deleted successfully. You can now register afresh.')),
+        );
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Deletion failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   String _calculateSemesterText(String timePeriod) {
     if (timePeriod.trim().isEmpty) return 'SEMESTER 1';
 
@@ -158,9 +214,38 @@ class _HomeScreenState extends State<HomeScreen> {
                 : const Icon(Icons.refresh, color: Color(0xFF64748B)),
             onPressed: _refresh,
           ),
-          IconButton(
-            icon: const Icon(Icons.logout, color: Color(0xFF64748B)),
-            onPressed: _handleLogout,
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Color(0xFF64748B)),
+            onSelected: (val) {
+              if (val == 'logout') {
+                _handleLogout();
+              } else if (val == 'delete') {
+                _handleDeleteDuplicateAccount();
+              }
+            },
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, size: 18, color: Color(0xFF64748B)),
+                    SizedBox(width: 8),
+                    Text('Logout', style: TextStyle(fontSize: 13)),
+                  ],
+                ),
+              ),
+              if (_profile.verificationStatus != 'VERIFIED')
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_forever, size: 18, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text('Delete Duplicate Account', style: TextStyle(fontSize: 13, color: Colors.red, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+            ],
           ),
           const SizedBox(width: 4),
         ],

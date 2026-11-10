@@ -1,0 +1,3 @@
+@echo off
+echo Starting Android Emulator (Resizable_Experimental)...
+start "" "%LOCALAPPDATA%\Android\Sdk\emulator\emulator.exe" -avd Resizable_Experimental

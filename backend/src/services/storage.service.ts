@@ -112,4 +112,35 @@ export const getPublicFileUrl = (filePath: string): string => {
   return `${baseUrl}/uploads/${relativePath}`;
 };
 
+export const deleteFileFromCloud = async (fileUrlOrPath: string): Promise<void> => {
+  if (!fileUrlOrPath) return;
+
+  // 1. If it's a Supabase storage public URL
+  if (supabaseClient && fileUrlOrPath.includes('/storage/v1/object/public/')) {
+    try {
+      const parts = fileUrlOrPath.split(`/storage/v1/object/public/${bucketName}/`);
+      if (parts.length > 1) {
+        const storagePath = parts[1];
+        await supabaseClient.storage.from(bucketName).remove([storagePath]);
+      }
+    } catch (err: any) {
+      console.warn('[Supabase Storage Delete Warning]', err.message);
+    }
+  }
+
+  // 2. If it's a local file path or relative upload
+  try {
+    let localPath = fileUrlOrPath;
+    if (fileUrlOrPath.includes('/uploads/')) {
+      const rel = fileUrlOrPath.split('/uploads/')[1];
+      localPath = path.join(uploadsRoot, rel);
+    }
+    if (fs.existsSync(localPath)) {
+      fs.unlinkSync(localPath);
+    }
+  } catch (err: any) {
+    // Ignore local file delete errors
+  }
+};
+
 export const getUploadsRoot = () => uploadsRoot;

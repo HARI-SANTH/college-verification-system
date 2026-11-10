@@ -14,6 +14,7 @@ const auth_1 = require("../middleware/auth");
 const types_1 = require("../types");
 const mail_service_1 = require("../services/mail.service");
 const storage_service_1 = require("../services/storage.service");
+const rate_limiter_1 = require("../middleware/rate-limiter");
 const router = (0, express_1.Router)();
 // Helper to sanitize and parse student profile with parsed fieldFlags object
 const formatStudentProfile = (profile) => {
@@ -55,7 +56,7 @@ const loginSchema = zod_1.z.object({
     password: zod_1.z.string().min(1),
 });
 // Student Sign-Up / Register
-router.post('/register', async (req, res) => {
+router.post('/register', rate_limiter_1.authLimiter, async (req, res) => {
     try {
         const validatedData = registerSchema.parse(req.body);
         // Check if email or phone exists
@@ -168,7 +169,7 @@ router.post('/register', async (req, res) => {
     }
 });
 // Login (Student, Admin, Super Admin)
-router.post('/login', async (req, res) => {
+router.post('/login', rate_limiter_1.authLimiter, async (req, res) => {
     try {
         const { identifier, password } = loginSchema.parse(req.body);
         const trimmedId = identifier.trim();
@@ -264,7 +265,7 @@ const maskEmail = (email) => {
     return `${visible}***@${domain}`;
 };
 // 4. Request Password Reset OTP
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', rate_limiter_1.passwordResetLimiter, async (req, res) => {
     try {
         const { identifier } = forgotPasswordSchema.parse(req.body);
         const trimmed = identifier.trim();
@@ -325,7 +326,7 @@ router.post('/forgot-password', async (req, res) => {
     }
 });
 // 5. Verify OTP & Reset Password
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', rate_limiter_1.passwordResetLimiter, async (req, res) => {
     try {
         const { identifier, otp, newPassword } = resetPasswordSchema.parse(req.body);
         const trimmed = identifier.trim();

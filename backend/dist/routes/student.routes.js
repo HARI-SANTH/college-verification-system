@@ -28,6 +28,12 @@ const ALIAS_MAP = {
     PROFILE_PHOTO: ['photoUrl', 'photo'],
     photoUrl: ['PROFILE_PHOTO'],
     photo: ['PROFILE_PHOTO'],
+    fullName: ['firstName', 'lastName'],
+    firstName: ['fullName'],
+    lastName: ['fullName'],
+    nameMalayalam: ['firstNameMalayalam', 'lastNameMalayalam'],
+    firstNameMalayalam: ['nameMalayalam'],
+    lastNameMalayalam: ['nameMalayalam'],
 };
 const CANONICAL_DOC_MAP = {
     PLUS_TWO_CERT: 'PLUS_TWO_CERTIFICATE',
@@ -188,6 +194,77 @@ router.put('/profile', async (req, res) => {
         // If student was in CORRECTION_REQUIRED and all text flags are cleared (or submitted), transition back to SUBMITTED
         let nextStatus = currentStatus;
         if (req.body.isFinalSubmission) {
+            // 1. Exhaustive field-level validation for final submission
+            const merged = { ...profile, ...dataToUpdate };
+            const missingFields = [];
+            const requiredKeys = [
+                { key: 'firstName', label: 'English First Name' },
+                { key: 'lastName', label: 'English Last Name' },
+                { key: 'firstNameMalayalam', label: 'Malayalam First Name' },
+                { key: 'lastNameMalayalam', label: 'Malayalam Last Name' },
+                { key: 'dob', label: 'Date of Birth' },
+                { key: 'gender', label: 'Gender' },
+                { key: 'permanentAddress', label: 'Permanent Address' },
+                { key: 'fatherName', label: "Father's Name" },
+                { key: 'motherName', label: "Mother's Name" },
+                { key: 'prevInstitutionName', label: 'School Last Attended' },
+                { key: 'prevCourse', label: 'Stream' },
+                { key: 'prevRegisterNumber', label: 'HSE Register Number' },
+                { key: 'prevBoardUniversity', label: 'Examination Board' },
+                { key: 'prevPeriodOfStudy', label: 'Period of Study' },
+                { key: 'prevPercentage', label: 'Percentage' },
+                { key: 'courseAdmitted', label: 'Course Admitted' },
+                { key: 'quota', label: 'Admission Quota' },
+                { key: 'annualIncome', label: 'Annual Income' },
+                { key: 'bankAccountName', label: 'Bank Account Holder Name' },
+                { key: 'bankName', label: 'Bank Name' },
+                { key: 'bankBranch', label: 'Bank Branch' },
+                { key: 'bankAccountNumber', label: 'Bank Account Number' },
+                { key: 'bankIfscCode', label: 'Bank IFSC Code' },
+                { key: 'aadhaarNumber', label: 'Aadhaar Card UID' },
+                { key: 'apaarId', label: 'APAAR / ABC ID' },
+            ];
+            for (const reqItem of requiredKeys) {
+                const val = merged[reqItem.key];
+                if (val === undefined || val === null || String(val).trim() === '') {
+                    missingFields.push(reqItem.label);
+                }
+            }
+            // 2. Exhaustive document validation
+            const docs = await prisma_1.prisma.studentDocument.findMany({
+                where: { studentProfileId: profile.id },
+            });
+            const docTypes = new Set(docs.map((d) => d.type));
+            const hasDoc = (types) => types.some((t) => docTypes.has(t));
+            const missingDocs = [];
+            if (!hasDoc(['PROFILE_PHOTO', 'photo']))
+                missingDocs.push('Passport Size Photograph');
+            if (!hasDoc(['SSLC_CERTIFICATE', 'SSLC_CERT']))
+                missingDocs.push('SSLC 10th Book');
+            if (!hasDoc(['PLUS_TWO_CERTIFICATE', 'PLUS_TWO_CERT']))
+                missingDocs.push('+2 HSE Marksheet');
+            if (!hasDoc(['ALLOTMENT_MEMO', 'ALLOTMENT']))
+                missingDocs.push('Allotment Memo Slip');
+            if (!hasDoc(['AADHAAR_CARD', 'AADHAAR_DOCUMENT', 'aadhaar']))
+                missingDocs.push('Aadhaar Card Copy');
+            if (!hasDoc(['BANK_PASSBOOK', 'BANK_PASSBOOK_COPY']))
+                missingDocs.push('Bank Passbook Copy');
+            if (!hasDoc(['APAAR_DOCUMENT', 'APAAR_CARD']))
+                missingDocs.push('APAAR / ABC ID Card');
+            const quota = String(merged.quota || '').toLowerCase();
+            if (quota.includes('community') && !hasDoc(['COMMUNITY_CERTIFICATE', 'COMMUNITY_CERT'])) {
+                missingDocs.push('Community Certificate');
+            }
+            if (merged.isEws && !hasDoc(['INCOME_CERTIFICATE', 'INCOME_CERT'])) {
+                missingDocs.push('Income Certificate (for EWS Reservation)');
+            }
+            if (missingFields.length > 0 || missingDocs.length > 0) {
+                return res.status(400).json({
+                    error: 'Application submission failed. A student cannot submit the form without filling all fields and uploading all required documents.',
+                    missingFields,
+                    missingDocuments: missingDocs,
+                });
+            }
             nextStatus = types_1.VerificationStatus.SUBMITTED;
         }
         const updatedProfile = await prisma_1.prisma.studentProfile.update({
@@ -315,6 +392,42 @@ router.post('/documents', storage_service_1.uploadMiddleware.single('file'), asy
         }
         console.error('[Document Upload Error]', err);
         return res.status(500).json({ error: 'Failed to upload document' });
+    }
+});
+// 4. Delete / Reset Student Account (Self-Service for Duplicate Entries before Final Verification)
+router.delete('/account', async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { reason = 'Self-requested account deletion / duplicate entry' } = req.body || {};
+        const profile = await prisma_1.prisma.studentProfile.findUnique({
+            where: { userId },
+            include: { documents: true },
+        });
+        if (profile && profile.verificationStatus === types_1.VerificationStatus.VERIFIED) {
+            return res.status(403).json({
+                error: 'Your profile has already been verified and locked by the College Administration. Please contact the admissions office to request changes or withdrawal.',
+            });
+        }
+        // Clean up uploaded files from storage
+        if (profile) {
+            for (const doc of profile.documents) {
+                if (doc.fileUrl)
+                    await (0, storage_service_1.deleteFileFromCloud)(doc.fileUrl);
+                if (doc.filePath && doc.filePath !== doc.fileUrl)
+                    await (0, storage_service_1.deleteFileFromCloud)(doc.filePath);
+            }
+        }
+        // Delete user (cascades to profile & documents)
+        await prisma_1.prisma.user.delete({
+            where: { id: userId },
+        });
+        return res.json({
+            message: 'Your account and all uploaded data have been deleted successfully. You can now re-register with correct information.',
+        });
+    }
+    catch (err) {
+        console.error('[Student Delete Account Error]', err);
+        return res.status(500).json({ error: err.message || 'Failed to delete account' });
     }
 });
 exports.default = router;

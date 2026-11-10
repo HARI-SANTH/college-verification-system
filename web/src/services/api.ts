@@ -1,3 +1,5 @@
+import { AIVerificationSummary } from '../types';
+
 const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
 
 export const getAuthToken = (): string | null => {
@@ -93,6 +95,17 @@ export const api = {
     return json;
   },
 
+  async deleteAccount(reason?: string) {
+    const res = await fetch(`${API_BASE}/student/account`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+      body: JSON.stringify({ reason }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Failed to delete account');
+    return json;
+  },
+
   // Admin
   async getAdminStats() {
     const res = await fetch(`${API_BASE}/admin/stats`, {
@@ -149,8 +162,19 @@ export const api = {
     return json;
   },
 
-  async aiVerifyStudent(id: string) {
-    const res = await fetch(`${API_BASE}/admin/students/${id}/ai-verify`, {
+  async deleteStudent(id: string, reason?: string) {
+    const res = await fetch(`${API_BASE}/admin/students/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+      body: JSON.stringify({ reason }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Failed to delete student');
+    return json;
+  },
+
+  async aiVerifyStudent(id: string, force = false): Promise<AIVerificationSummary> {
+    const res = await fetch(`${API_BASE}/admin/students/${id}/ai-verify?force=${force}`, {
       method: 'POST',
       headers: getHeaders(),
     });

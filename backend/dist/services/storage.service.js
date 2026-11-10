@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getUploadsRoot = exports.getPublicFileUrl = exports.uploadFileToCloud = exports.uploadMiddleware = void 0;
+exports.getUploadsRoot = exports.deleteFileFromCloud = exports.getPublicFileUrl = exports.uploadFileToCloud = exports.uploadMiddleware = void 0;
 const multer_1 = __importDefault(require("multer"));
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
@@ -115,5 +115,37 @@ const getPublicFileUrl = (filePath) => {
     return `${baseUrl}/uploads/${relativePath}`;
 };
 exports.getPublicFileUrl = getPublicFileUrl;
+const deleteFileFromCloud = async (fileUrlOrPath) => {
+    if (!fileUrlOrPath)
+        return;
+    // 1. If it's a Supabase storage public URL
+    if (supabaseClient && fileUrlOrPath.includes('/storage/v1/object/public/')) {
+        try {
+            const parts = fileUrlOrPath.split(`/storage/v1/object/public/${bucketName}/`);
+            if (parts.length > 1) {
+                const storagePath = parts[1];
+                await supabaseClient.storage.from(bucketName).remove([storagePath]);
+            }
+        }
+        catch (err) {
+            console.warn('[Supabase Storage Delete Warning]', err.message);
+        }
+    }
+    // 2. If it's a local file path or relative upload
+    try {
+        let localPath = fileUrlOrPath;
+        if (fileUrlOrPath.includes('/uploads/')) {
+            const rel = fileUrlOrPath.split('/uploads/')[1];
+            localPath = path_1.default.join(uploadsRoot, rel);
+        }
+        if (fs_1.default.existsSync(localPath)) {
+            fs_1.default.unlinkSync(localPath);
+        }
+    }
+    catch (err) {
+        // Ignore local file delete errors
+    }
+};
+exports.deleteFileFromCloud = deleteFileFromCloud;
 const getUploadsRoot = () => uploadsRoot;
 exports.getUploadsRoot = getUploadsRoot;

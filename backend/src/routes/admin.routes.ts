@@ -3,7 +3,9 @@ import { prisma } from '../prisma';
 import { authenticateToken, requireRole } from '../middleware/auth';
 import { Role, VerificationStatus, FieldFlagDetail } from '../types';
 import { mailService } from '../services/mail.service';
+import { deleteFileFromCloud } from '../services/storage.service';
 import { aiVerifierService } from '../services/ai-verifier.service';
+import { aiVerificationLimiter, exportLimiter } from '../middleware/rate-limiter';
 import ExcelJS from 'exceljs';
 import archiver from 'archiver';
 import path from 'path';
@@ -244,6 +246,12 @@ router.post('/students/:id/flag', async (req: Request, res: Response) => {
       parentName: ['fatherName'],
       fatherOccupation: ['parentOccupation'],
       parentOccupation: ['fatherOccupation'],
+      fullName: ['firstName', 'lastName'],
+      firstName: ['fullName'],
+      lastName: ['fullName'],
+      nameMalayalam: ['firstNameMalayalam', 'lastNameMalayalam'],
+      firstNameMalayalam: ['nameMalayalam'],
+      lastNameMalayalam: ['nameMalayalam'],
     };
 
     for (const flag of flags) {
@@ -376,7 +384,7 @@ router.post('/students/:id/verify', async (req: Request, res: Response) => {
 });
 
 // 4b. AI Automated Discrepancy Verification Scan
-router.post('/students/:id/ai-verify', async (req: Request, res: Response) => {
+router.all('/students/:id/ai-verify', aiVerificationLimiter, async (req: Request, res: Response) => {
   try {
     const student: any = await prisma.studentProfile.findFirst({
       where: {
@@ -395,7 +403,8 @@ router.post('/students/:id/ai-verify', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Student not found' });
     }
 
-    const auditResult = await aiVerifierService.runAudit(student);
+    const force = req.query.force === 'true' || req.body?.force === true;
+    const auditResult = await aiVerifierService.runAudit(student, force);
     return res.json(auditResult);
   } catch (err) {
     console.error('[Admin AI Verify Error]', err);
@@ -490,7 +499,7 @@ router.get('/documents/:id/preview', async (req: Request, res: Response) => {
 });
 
 // 5. Export to Excel
-router.get('/export/excel', async (req: Request, res: Response) => {
+router.get('/export/excel', exportLimiter, async (req: Request, res: Response) => {
   try {
     const where = buildStudentFilter(req.query);
 
@@ -585,7 +594,7 @@ router.get('/export/excel', async (req: Request, res: Response) => {
 });
 
 // 6. Bulk Document Download (ZIP)
-router.get('/export/documents-zip', async (req: Request, res: Response) => {
+router.get('/export/documents-zip', exportLimiter, async (req: Request, res: Response) => {
   try {
     const where = buildStudentFilter(req.query);
     const docTypeFilter = req.query.documentType as string; // Optional: specific document type like APAAR_DOCUMENT
@@ -639,6 +648,65 @@ router.get('/export/documents-zip', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[Bulk ZIP Error]', err);
     return res.status(500).json({ error: 'Failed to generate documents ZIP' });
+  }
+});
+
+// 7. Delete / Purge Student Record (e.g. for Duplicate Entries or Mistaken Registrations)
+router.delete('/students/:id', async (req: Request, res: Response) => {
+  try {
+    const studentId = String(req.params.id);
+    const { reason = 'Duplicate Entry / Administrative Purge' } = req.body || {};
+
+    const profile: any = await prisma.studentProfile.findUnique({
+      where: { id: studentId },
+      include: {
+        user: true,
+        documents: true,
+      },
+    });
+
+    if (!profile) {
+      return res.status(404).json({ error: 'Student record not found' });
+    }
+
+    // 1. Delete all attached files from Supabase Storage and local disk
+    for (const doc of profile.documents) {
+      if (doc.fileUrl) {
+        await deleteFileFromCloud(doc.fileUrl);
+      }
+      if (doc.filePath && doc.filePath !== doc.fileUrl) {
+        await deleteFileFromCloud(doc.filePath);
+      }
+    }
+
+    // 2. Audit Log the deletion
+    await prisma.auditLog.create({
+      data: {
+        adminId: req.user!.userId,
+        targetId: profile.id,
+        action: 'DELETED_STUDENT_RECORD',
+        details: JSON.stringify({
+          deletedStudent: `${profile.firstName} ${profile.lastName}`,
+          admissionNumber: profile.admissionNumber,
+          userEmail: profile.user?.email,
+          reason,
+          deletedAt: new Date().toISOString(),
+        }),
+      },
+    });
+
+    // 3. Delete the User record (cascading deletes StudentProfile & StudentDocuments)
+    await prisma.user.delete({
+      where: { id: profile.userId },
+    });
+
+    return res.json({
+      message: `Student ${profile.firstName} ${profile.lastName} (${profile.admissionNumber}) and all associated documents deleted successfully.`,
+      deletedId: studentId,
+    });
+  } catch (err: any) {
+    console.error('[Admin Delete Student Error]', err);
+    return res.status(500).json({ error: err.message || 'Failed to delete student record' });
   }
 });
 
